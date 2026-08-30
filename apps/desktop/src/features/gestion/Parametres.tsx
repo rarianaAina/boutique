@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { DEFAULT_NUMBERING, PERMISSIONS, formatDocumentNumber } from '@boutique/shared';
 import { SettingRepository, SETTING_KEYS } from '@/core/db/repositories/setting.repository';
 import { ShopRepository } from '@/core/db/repositories/shop.repository';
+import { Licence } from './Licence';
 import { BackupService, type BackupInfo } from '@/core/services/backup.service';
 import { SeedService } from '@/core/services/seed.service';
 import type { CostMethod } from '@/core/services/cost.service';
@@ -178,6 +179,12 @@ export function Parametres() {
           ) : null
         }
       />
+
+      {/* L'activation ne dépend PAS du droit de régler les paramètres : un
+          gérant sans ce droit doit pouvoir lire son échéance et saisir la clé
+          qu'on vient de lui envoyer, sinon le poste se ferme faute d'un
+          réglage que personne sur place n'a le droit de toucher. */}
+      <Licence />
 
       {!peutRegler ? <LectureSeule quoi="modifier les paramètres" /> : null}
 

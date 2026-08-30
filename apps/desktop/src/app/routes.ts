@@ -1,5 +1,5 @@
 import { PAGE_PERMISSIONS } from '@boutique/shared';
-import type { PagePermission } from '@boutique/shared';
+import type { FonctionBoutique, PagePermission } from '@boutique/shared';
 import type { NomIcone } from '@/components/ui/Icone';
 
 /**
@@ -50,6 +50,19 @@ export interface Ecran {
    * l'intérieur de l'écran.
    */
   permission: PagePermission;
+  /**
+   * Fonction de la LICENCE qui ouvre cet écran.
+   *
+   * Distincte de la permission, et pour une raison qui se voit à l'écran : une
+   * page fermée par le rôle se règle chez le client, dans « Utilisateurs et
+   * rôles » ; une page fermée par la licence ne se règle qu'en achetant le
+   * module. Les confondre ferait chercher pendant une heure un réglage qui
+   * n'existe pas.
+   *
+   * Absente, l'écran relève du noyau : il est toujours ouvert, tant que la
+   * licence n'est pas échue.
+   */
+  fonction?: FonctionBoutique;
   /** Raccourci clavier global, avec la touche Alt. */
   raccourci?: string;
 }
@@ -100,12 +113,14 @@ export const NAVIGATION: Groupe[] = [
         titre: 'Remboursements',
         icone: 'retour',
         permission: PAGE_PERMISSIONS.remboursements,
+        fonction: 'apres-vente',
       },
       {
         cle: 'echanges',
         titre: 'Échanges',
         icone: 'echange',
         permission: PAGE_PERMISSIONS.echanges,
+        fonction: 'apres-vente',
       },
     ],
   },
@@ -154,12 +169,14 @@ export const NAVIGATION: Groupe[] = [
         titre: 'Fournisseurs',
         icone: 'fournisseur',
         permission: PAGE_PERMISSIONS.fournisseurs,
+        fonction: 'achats',
       },
       {
         cle: 'achats',
         titre: 'Commandes et réceptions',
         icone: 'achat',
         permission: PAGE_PERMISSIONS.achats,
+        fonction: 'achats',
       },
     ],
   },
@@ -171,12 +188,14 @@ export const NAVIGATION: Groupe[] = [
         titre: 'Transferts',
         icone: 'camion',
         permission: PAGE_PERMISSIONS.transferts,
+        fonction: 'multiboutique',
       },
       {
         cle: 'synchronisation',
         titre: 'Synchronisation',
         icone: 'synchro',
         permission: PAGE_PERMISSIONS.synchronisation,
+        fonction: 'synchronisation',
       },
     ],
   },
@@ -188,24 +207,28 @@ export const NAVIGATION: Groupe[] = [
         titre: 'Clients',
         icone: 'client',
         permission: PAGE_PERMISSIONS.clients,
+        fonction: 'clients',
       },
       {
         cle: 'rapports',
         titre: 'Rapports',
         icone: 'rapport',
         permission: PAGE_PERMISSIONS.rapports,
+        fonction: 'rapports',
       },
       {
         cle: 'prix',
         titre: 'Évolution des prix',
         icone: 'mouvement',
         permission: PAGE_PERMISSIONS.prix,
+        fonction: 'rapports',
       },
       {
         cle: 'import',
         titre: 'Import Excel',
         icone: 'import',
         permission: PAGE_PERMISSIONS.import,
+        fonction: 'import',
       },
       {
         cle: 'journal',
@@ -218,6 +241,7 @@ export const NAVIGATION: Groupe[] = [
         titre: 'Boutiques',
         icone: 'fournisseur',
         permission: PAGE_PERMISSIONS.boutiques,
+        fonction: 'multiboutique',
       },
       {
         cle: 'utilisateurs',

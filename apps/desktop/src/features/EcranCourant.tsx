@@ -1,4 +1,5 @@
 import { Suspense, lazy } from 'react';
+import { BOUTIQUE, type FonctionBoutique } from '@boutique/shared';
 import { Chargement, Vide } from '@/components/ui/Page';
 import { useNavigation } from '@/app/navigation';
 import { useSession } from '@/app/session';
@@ -62,7 +63,7 @@ const Parametres = lazy(() =>
 
 export function EcranCourant({ cle }: { cle: CleEcran }) {
   const { parametre } = useNavigation();
-  const { peut } = useSession();
+  const { peut, ouvre } = useSession();
   const description = ecranParCle(cle);
 
   // La permission d'ACCÈS est revérifiée ici, et pas seulement dans le menu :
@@ -78,10 +79,35 @@ export function EcranCourant({ cle }: { cle: CleEcran }) {
     );
   }
 
+  // La LICENCE est une autre question, et le message doit le dire : un module
+  // non acheté ne se débloque pas en changeant un rôle. Confondre les deux
+  // ferait chercher pendant une heure un réglage qui n'existe pas.
+  if (description?.fonction && !ouvre(description.fonction)) {
+    return <ModuleNonCompris titre={description.titre} fonction={description.fonction} />;
+  }
+
   return (
     <Suspense fallback={<Chargement />}>
       <Ecran cle={cle} parametre={parametre ?? null} />
     </Suspense>
+  );
+}
+
+/**
+ * Écran d'un module que la licence n'ouvre pas.
+ *
+ * Il DÉCRIT le module au lieu de se contenter de le refuser : la personne
+ * devant l'écran est souvent celle qui décidera de l'acheter, et un « accès
+ * refusé » sec ne lui apprend pas ce qu'elle rate.
+ */
+function ModuleNonCompris({ titre, fonction }: { titre: string; fonction: FonctionBoutique }) {
+  const description = BOUTIQUE.fonctions.find((element) => element.cle === fonction);
+  return (
+    <Vide
+      icone="reglage"
+      titre={`${titre} n’est pas compris dans votre licence`}
+      detail={`${description?.description ?? ''} Ce module s’ajoute à votre licence sans réinstaller quoi que ce soit : vos données restent en place et il s’ouvre dès la saisie de la nouvelle clé.`}
+    />
   );
 }
 

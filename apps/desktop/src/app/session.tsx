@@ -7,7 +7,16 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { can, newId, type Permission, type SessionUser } from '@boutique/shared';
+import {
+  can,
+  installationCode,
+  licenceAllows,
+  newId,
+  type FonctionBoutique,
+  type LicenceStatus,
+  type Permission,
+  type SessionUser,
+} from '@boutique/shared';
 import { getDb, type SqlExecutor } from '@/core/db/client';
 import { runStartupMaintenance } from '@/core/db/startup';
 import { ShopRepository } from '@/core/db/repositories/shop.repository';
@@ -20,7 +29,30 @@ import {
 import { AuthService } from '@/core/services/auth.service';
 import { SetupService } from '@/core/services/setup.service';
 import { BackupService } from '@/core/services/backup.service';
+import { LicenceService } from '@/core/licence/licence.service';
 import type { AppContext } from '@/core/services/context';
+
+/**
+ * État de départ, avant que la base ait pu répondre.
+ *
+ * « Absente » et non « valide » : tant qu'on ne sait pas, on ne suppose pas que
+ * le poste est activé. L'écran de démarrage passe de toute façon avant.
+ */
+const LICENCE_INCONNUE: LicenceStatus = {
+  state: 'absente',
+  payload: null,
+  daysLeft: null,
+  graceLeft: null,
+};
+
+/** Refus qui ne doit PAS devenir l'état affiché du poste. */
+function refusee(statut: LicenceStatus): boolean {
+  return (
+    statut.state === 'invalide' ||
+    statut.state === 'autre-entreprise' ||
+    statut.state === 'autre-produit'
+  );
+}
 
 /**
  * État global de l'application : base, boutique, session, paramètres.
@@ -50,6 +82,19 @@ interface ValeurSession {
   /** Contexte prêt à passer à un service. Null tant que personne n'est connecté. */
   contexte: AppContext | null;
   peut: (permission: Permission) => boolean;
+  /** État de l'activation du poste. */
+  licence: LicenceStatus;
+  /** Code d'installation à dicter pour obtenir une clé. */
+  codeInstallation: string;
+  /**
+   * La licence ouvre-t-elle cette fonction ?
+   *
+   * Distinct de `peut` : un droit se règle chez le client, une fonction
+   * s'achète. Les confondre ferait chercher un réglage qui n'existe pas.
+   */
+  ouvre: (fonction: FonctionBoutique) => boolean;
+  activerLicence: (cle: string) => Promise<LicenceStatus>;
+  rechargerLicence: () => Promise<void>;
   connecter: (login: string, motDePasse: string) => Promise<void>;
   deconnecter: () => Promise<void>;
   installer: (entree: Parameters<SetupService['run']>[0]) => Promise<void>;
@@ -68,6 +113,10 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
   const [shop, setShop] = useState({ id: '', code: '', name: '' });
   const [deviceId, setDeviceId] = useState('');
   const [incidents, setIncidents] = useState<string[]>([]);
+  const [licence, setLicence] = useState<LicenceStatus>(LICENCE_INCONNUE);
+  const [codeInstallation, setCodeInstallation] = useState('');
+  /** Date d'installation du poste, origine de la période d'essai. */
+  const [installeLe, setInstalleLe] = useState<string | null>(null);
 
   /* ─── Démarrage ─────────────────────────────────────────────────────────
      La base est ouverte, l'entretien passe, puis on décide de l'écran : une
@@ -107,6 +156,14 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
         }
         setShop({ id: boutique.id, code: boutique.code, name: boutique.name });
         setSettings(await new SettingRepository(executeur).load(boutique.id));
+
+        // La licence est jugée AVANT la connexion : un poste échu doit le dire
+        // à qui l'ouvre, pas après que quelqu'un a saisi son mot de passe.
+        const licences = new LicenceService(executeur);
+        setCodeInstallation(installationCode(await licences.installation()));
+        setInstalleLe(boutique.createdAt);
+        setLicence(await licences.status(boutique.createdAt));
+
         setEtat({ phase: 'connexion' });
       } catch (cause) {
         if (annule) return;
@@ -121,6 +178,23 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
       annule = true;
     };
   }, []);
+
+  const rechargerLicence = useCallback(async () => {
+    if (!db) return;
+    setLicence(await new LicenceService(db).status(installeLe));
+  }, [db, installeLe]);
+
+  const activerLicence = useCallback(
+    async (cle: string) => {
+      if (!db) throw new Error('Base indisponible.');
+      const statut = await new LicenceService(db).activate(cle);
+      // On ne retient à l'écran que ce qui a été ENREGISTRÉ : afficher un refus
+      // comme s'il était l'état du poste ferait croire à un blocage définitif.
+      if (!refusee(statut)) setLicence(statut);
+      return statut;
+    },
+    [db],
+  );
 
   const rechargerParametres = useCallback(async () => {
     if (!db || shop.id === '') return;
@@ -194,6 +268,11 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
       shopName: shop.name,
       deviceId,
       contexte,
+      licence,
+      codeInstallation,
+      ouvre: (fonction: FonctionBoutique) => licenceAllows(licence, fonction),
+      activerLicence,
+      rechargerLicence,
       peut: (permission: Permission) =>
         can(
           session
@@ -225,6 +304,10 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
       installer,
       rechargerParametres,
       incidents,
+      licence,
+      codeInstallation,
+      activerLicence,
+      rechargerLicence,
     ],
   );
 

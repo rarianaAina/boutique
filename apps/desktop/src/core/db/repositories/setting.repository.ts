@@ -29,6 +29,25 @@ export const SETTING_KEYS = {
   syncShopToken: 'sync.shop_token',
 } as const;
 
+/**
+ * Réglages qui appartiennent au POSTE et non à une boutique.
+ *
+ * La licence active un poste : la rattacher à une boutique la ferait
+ * disparaître le jour où l'on change de boutique locale, et réapparaître
+ * ailleurs. Ils sont donc écrits avec `shop_id` NULL, et lus tels quels.
+ *
+ * Ils ne figurent pas dans `ShopSettings` : ce ne sont pas des préférences de
+ * commerce, et les mélanger exposerait la clé à l'écran des paramètres généraux.
+ */
+export const POSTE_KEYS = {
+  /** Identifiant d'installation, tiré au premier démarrage puis immuable. */
+  installation: 'licence.installation',
+  /** Clé d'activation saisie par le commerçant. */
+  licenceKey: 'licence.key',
+  /** Cliquet d'horloge : la date la plus avancée jamais constatée. */
+  dateRatchet: 'licence.ratchet',
+} as const;
+
 export interface ShopSettings {
   currency: CurrencyFormat;
   taxEnabled: boolean;
@@ -141,6 +160,23 @@ export class SettingRepository {
       syncServerUrl: read(SETTING_KEYS.syncServerUrl, DEFAULT_SETTINGS.syncServerUrl),
       syncShopToken: read(SETTING_KEYS.syncShopToken, DEFAULT_SETTINGS.syncShopToken),
     };
+  }
+
+  /**
+   * Lit un réglage du POSTE, sans repli ni interprétation.
+   *
+   * `load` ne convient pas : il fusionne les réglages de la boutique et ceux du
+   * poste, et applique des valeurs par défaut. Une clé de licence absente doit
+   * rester absente — pas devenir une chaîne vide indiscernable d'une clé effacée.
+   */
+  async raw(key: string): Promise<string | null> {
+    const rows = await this.db.select<SettingRow>(
+      `SELECT key, value FROM setting WHERE key = ? AND shop_id IS NULL`,
+      [key],
+    );
+    const brut = rows[0]?.value;
+    if (brut === undefined) return null;
+    return parseJson<string>(brut, '');
   }
 
   async set(key: string, value: unknown, shopId: string | null): Promise<void> {

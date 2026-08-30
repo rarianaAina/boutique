@@ -3,6 +3,8 @@ import { Icone } from '@/components/ui/Icone';
 import embleme from '@/assets/embleme.png';
 import { Bouton } from '@/components/ui/Bouton';
 import { Avertissement } from '@/components/ui/Page';
+import { licenceBlocks } from '@boutique/shared';
+import { Licence } from '@/features/gestion/Licence';
 import { NAVIGATION, type CleEcran } from './routes';
 import { useNavigation } from './navigation';
 import { useSession } from './session';
@@ -20,10 +22,14 @@ import { EcranCourant } from '@/features/EcranCourant';
  *
  * Les entrées auxquelles l'utilisateur n'a pas droit ne sont pas grisées, elles
  * sont ABSENTES : un vendeur n'a pas à voir la liste de ce qu'il ne peut pas
- * faire.
+ * faire. Il en va autrement des modules NON ACHETÉS : ceux-là restent visibles,
+ * marqués, parce qu'ils se vendent — les cacher reviendrait à cacher au client
+ * ce qu'on a à lui proposer, et à lui faire croire que le logiciel ne sait pas
+ * le faire.
  */
 export function Shell() {
-  const { session, shopName, shopCode, deconnecter, peut, incidents } = useSession();
+  const { session, shopName, shopCode, deconnecter, peut, ouvre, licence, incidents } =
+    useSession();
   const { ecran, aller } = useNavigation();
   const [incidentsMasques, setIncidentsMasques] = useState(false);
 
@@ -33,9 +39,15 @@ export function Shell() {
         ...groupe,
         // Une entrée interdite est ABSENTE, pas grisée : un vendeur n'a pas à
         // voir la liste de ce qu'il ne peut pas faire.
-        ecrans: groupe.ecrans.filter((entree) => peut(entree.permission)),
+        ecrans: groupe.ecrans
+          .filter((entree) => peut(entree.permission))
+          .map((entree) => ({
+            ...entree,
+            // Sans fonction déclarée, l'écran relève du noyau : toujours ouvert.
+            vendu: entree.fonction === undefined || ouvre(entree.fonction),
+          })),
       })).filter((groupe) => groupe.ecrans.length > 0),
-    [peut],
+    [peut, ouvre],
   );
 
   /* Raccourcis Alt+chiffre : le comptoir bascule au clavier entre la caisse,
@@ -45,7 +57,7 @@ export function Shell() {
       if (!evenement.altKey || evenement.ctrlKey || evenement.metaKey) return;
       const cible = groupes
         .flatMap((groupe) => groupe.ecrans)
-        .find((entree) => entree.raccourci === evenement.key);
+        .find((entree) => entree.raccourci === evenement.key && entree.vendu);
       if (cible) {
         evenement.preventDefault();
         aller(cible.cle);
@@ -54,6 +66,16 @@ export function Shell() {
     window.addEventListener('keydown', surTouche);
     return () => window.removeEventListener('keydown', surTouche);
   }, [groupes, aller]);
+
+  /*
+   * Poste bloqué : plus rien d'autre que l'écran d'activation.
+   *
+   * On ne laisse pas entrer « en lecture seule » : une caisse qu'on peut
+   * encore consulter est une caisse qu'on continue d'utiliser, et l'échéance
+   * ne serait jamais réglée. Les données, elles, restent intactes — l'écran le
+   * dit, parce que c'est la première inquiétude du commerçant.
+   */
+  if (licenceBlocks(licence)) return <Licence pleinEcran />;
 
   return (
     <div className="flex h-full overflow-hidden bg-encre-100">
@@ -88,6 +110,7 @@ export function Shell() {
                       icone={entree.icone}
                       titre={entree.titre}
                       raccourci={entree.raccourci}
+                      vendu={entree.vendu}
                     />
                   </li>
                 ))}
@@ -115,6 +138,17 @@ export function Shell() {
           <RechercheGlobale />
           <div className="ml-auto text-xs text-encre-400">v{__APP_VERSION__}</div>
         </header>
+
+        {licence.state === 'grace' ? (
+          <div className="border-b border-alerte-200 px-5 py-2">
+            <Avertissement>
+              Licence échue le {licence.payload?.e ?? ''}. Tout fonctionne encore pendant{' '}
+              {licence.graceLeft ?? 0} jour
+              {(licence.graceLeft ?? 0) > 1 ? 's' : ''}, puis le poste se fermera. Rendez-vous dans
+              « Paramètres » pour saisir la nouvelle clé.
+            </Avertissement>
+          </div>
+        ) : null}
 
         {incidents.length > 0 && !incidentsMasques ? (
           <div className="border-b border-alerte-200 px-5 py-2">
@@ -147,29 +181,41 @@ function BoutonNavigation({
   icone,
   titre,
   raccourci,
+  vendu,
 }: {
   actif: boolean;
   onClick: () => void;
   icone: Parameters<typeof Icone>[0]['nom'];
   titre: string;
   raccourci?: string;
+  /** Le module est-il compris dans la licence du poste ? */
+  vendu: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-current={actif ? 'page' : undefined}
+      title={vendu ? undefined : `${titre} n’est pas compris dans votre licence.`}
       className={`flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
         actif
           ? 'bg-marque-50 font-medium text-marque-800'
-          : 'text-encre-700 hover:bg-encre-100 hover:text-encre-900'
+          : vendu
+            ? 'text-encre-700 hover:bg-encre-100 hover:text-encre-900'
+            : 'text-encre-400 hover:bg-encre-100'
       }`}
     >
       <span className={actif ? 'text-marque-600' : 'text-encre-400'}>
         <Icone nom={icone} taille={17} />
       </span>
       <span className="min-w-0 flex-1 truncate">{titre}</span>
-      {raccourci ? (
+      {/* Un module non acheté reste CLIQUABLE : l'écran expliquera ce qu'il
+          fait et comment l'obtenir. Un bouton mort n'apprend rien à personne. */}
+      {!vendu ? (
+        <span className="shrink-0 text-encre-300" aria-label="Non compris dans la licence">
+          <Icone nom="reglage" taille={13} />
+        </span>
+      ) : raccourci ? (
         <kbd className="shrink-0 text-[10px] font-medium text-encre-400">Alt{raccourci}</kbd>
       ) : null}
     </button>
