@@ -64,12 +64,14 @@ pub async fn backup_database<R: Runtime>(
         let _ = std::fs::remove_file(&target);
         let destination = target.to_string_lossy().replace('\'', "''");
         sqlx::query(&format!("VACUUM INTO '{destination}'"))
-            .execute(&*pool)
+            .execute(pool)
             .await
             .map_err(|error| format!("sauvegarde impossible : {error}"))?;
     }
 
-    let bytes = std::fs::metadata(&target).map(|meta| meta.len()).unwrap_or(0);
+    let bytes = std::fs::metadata(&target)
+        .map(|meta| meta.len())
+        .unwrap_or(0);
     prune(&dir, keep.unwrap_or(14))?;
 
     Ok(BackupInfo {
@@ -122,7 +124,7 @@ pub async fn check_integrity(
     };
 
     let row: (String,) = sqlx::query_as("PRAGMA integrity_check")
-        .fetch_one(&*pool)
+        .fetch_one(pool)
         .await
         .map_err(|error| error.to_string())?;
     Ok(row.0)
@@ -152,8 +154,7 @@ pub async fn restore_database<R: Runtime>(
         .app_config_dir()
         .map_err(|error| format!("dossier de configuration introuvable : {error}"))?;
     let staged = config.join("boutique.db.restore");
-    std::fs::copy(source_path, &staged)
-        .map_err(|error| format!("copie impossible : {error}"))?;
+    std::fs::copy(source_path, &staged).map_err(|error| format!("copie impossible : {error}"))?;
 
     Ok(staged.to_string_lossy().to_string())
 }
