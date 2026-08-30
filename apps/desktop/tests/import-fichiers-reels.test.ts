@@ -45,6 +45,24 @@ function associationParEntete(feuille: SheetData): Record<string, string | null>
   return resultat;
 }
 
+/**
+ * Total des lignes utiles de tous les classeurs.
+ *
+ * Calculé plutôt que figé : le client remanie ses fichiers d'une semaine à
+ * l'autre. Ce que le test vérifie, c'est qu'AUCUNE ligne n'est perdue en route
+ * — pas qu'il y en ait un nombre précis.
+ */
+function compterLignesReelles(): number {
+  let total = 0;
+  for (const nom of readdirSync(DOSSIER).filter((f) => f.endsWith('.xlsx'))) {
+    const livre = charger(nom);
+    for (const info of listSheets(livre)) {
+      total += readSheet(livre, info.name).rows.length;
+    }
+  }
+  return total;
+}
+
 describe('fichiers Excel réels du client', () => {
   let fixture: Fixture;
   let context: AppContext;
@@ -56,9 +74,9 @@ describe('fichiers Excel réels du client', () => {
     service = new ImportService(context);
   });
 
-  it('les sept fichiers sont présents et lisibles', () => {
+  it('tous les classeurs du dossier sont présents et lisibles', () => {
     const fichiers = readdirSync(DOSSIER).filter((nom) => nom.endsWith('.xlsx'));
-    expect(fichiers.length).toBe(7);
+    expect(fichiers.length).toBeGreaterThanOrEqual(6);
     for (const nom of fichiers) {
       expect(listSheets(charger(nom)).length).toBeGreaterThan(0);
     }
@@ -68,9 +86,16 @@ describe('fichiers Excel réels du client', () => {
     it("associe toutes les colonnes d'une feuille d'accessoires", () => {
       const association = associationParEntete(readSheet(charger('Housses.xlsx'), 'Housses'));
 
+      // Les feuilles d'accessoires ne portent PLUS de désignation : l'article
+      // s'y décrit par sa marque et son modèle. L'orthographe de « Réference
+      // interne » est celle du client, accent manquant compris.
       expect(association).toMatchObject({
-        Nom: 'name',
-        'Référence interne': 'sku',
+        Marque: 'brand',
+        // Les intitulés sont détourés à la lecture : le client entoure les
+        // siens d'espaces (« ␣Modèle␣ ») sans que cela change quoi que ce soit.
+        Modèle: 'model',
+        Couleur: 'color',
+        'Réference interne': 'sku',
         'Code-barres': 'barcode',
         Fournisseur: 'supplier',
         Emplacement: 'location',
@@ -111,10 +136,20 @@ describe('fichiers Excel réels du client', () => {
 
     it('ne confond pas « Coût » et « Prix de vente »', () => {
       const association = associationParEntete(
-        readSheet(charger('Cache-écrans_hydrogel.xlsx'), 'Film hydrogel'),
+        readSheet(charger('Boitiers_et_câbles.xlsx'), 'Boitiers'),
       );
       expect(association['Coût']).toBe('purchasePrice');
       expect(association['Prix de vente']).toBe('salePrice');
+    });
+
+    it("associe les qualificatifs propres aux familles d'accessoires", () => {
+      const cache = associationParEntete(readSheet(charger('Cache écrans.xlsx'), 'Verre trempé'));
+      expect(cache['Type']).toBe('type');
+
+      const livre = charger('Boitiers_et_câbles.xlsx');
+      expect(associationParEntete(readSheet(livre, 'Boitiers'))['Puissance']).toBe('power');
+      expect(associationParEntete(readSheet(livre, 'Câbles'))['Avec Boitier']).toBe('withCase');
+      expect(associationParEntete(readSheet(livre, 'Powerbank'))['Avec cable']).toBe('withCable');
     });
 
     it('aucune colonne des fichiers réels ne reste orpheline', () => {
@@ -152,12 +187,14 @@ describe('fichiers Excel réels du client', () => {
     });
 
     it("dérive une référence lisible quand le fichier n'en donne pas", async () => {
-      const feuille = readSheet(charger('Housses.xlsx'), 'Housses');
+      // Les housses portent toutes une référence ; les boîtiers, non. C'est la
+      // feuille qui en manque qui vérifie la dérivation.
+      const feuille = readSheet(charger('Boitiers_et_câbles.xlsx'), 'Boitiers');
       const plan = await service.plan(
         feuille,
         suggestMapping(feuille.headers),
         'CREATE_ONLY',
-        'Housses.xlsx',
+        'Boitiers_et_câbles.xlsx',
       );
       const derivee = plan.report.rows.find((ligne) => ligne.skuDerived);
       expect(derivee?.product?.sku).toMatch(/^AUTO-/);
@@ -452,20 +489,29 @@ describe('fichiers Excel réels du client', () => {
       }
 
       expect(erreurs).toBe(0);
-      expect(crees).toBeGreaterThanOrEqual(24);
+      expect(crees).toBeGreaterThanOrEqual(10);
 
-      // Chaque feuille apporte sa catégorie.
+      // Chaque feuille apporte sa catégorie, lue dans « Etiquettes ».
       const categories = await new CategoryRepository(fixture.db).list();
       const noms = categories.map((element) => element.name);
-      expect(noms).toContain('Boitiers et câbles');
+      expect(noms).toContain('Boitiers');
+      expect(noms).toContain('Câbles');
       expect(noms).toContain('Powerbank');
     });
   });
 
   describe('lignes incomplètes', () => {
     it('rejette les lignes sans prix de vente, et elles seules', async () => {
-      const livre = charger('Ecouteurs_Micro_Camera_Casque_Stabilisateurs.xlsx');
-      const feuille = readSheet(livre, 'Casque');
+      // Feuille fabriquée sur le modèle des accessoires du client : les
+      // classeurs réels sont complets aujourd'hui, ils ne le resteront pas.
+      const feuille: SheetData = {
+        name: 'Casque',
+        headers: ['Marque', ' Modèle ', 'Prix de vente', 'Quantité'],
+        rows: [
+          ['JBL', 'Live 660NC', '320000', '5'],
+          ['Bose', 'QuietComfort Ultra', '', '3'],
+        ],
+      };
       const plan = await service.plan(
         feuille,
         suggestMapping(feuille.headers),
@@ -474,17 +520,17 @@ describe('fichiers Excel réels du client', () => {
       );
 
       const rejetees = plan.report.rows.filter((ligne) => ligne.outcome === 'ERROR');
-      expect(rejetees.length).toBeGreaterThan(0);
+      expect(rejetees.length).toBe(1);
       for (const ligne of rejetees) {
         expect(ligne.problems.join(' ')).toMatch(/[Pp]rix de vente/);
       }
       // Les lignes complètes passent malgré tout.
-      expect(plan.report.counts.CREATE).toBeGreaterThan(0);
+      expect(plan.report.counts.CREATE).toBe(1);
     });
   });
 
   describe("l'ensemble du catalogue", () => {
-    it('importe les sept fichiers, toutes feuilles, sans erreur technique', async () => {
+    it('importe tous les classeurs, toutes feuilles, sans erreur technique', async () => {
       let total = 0;
       let crees = 0;
       let erreurs = 0;
@@ -513,15 +559,17 @@ describe('fichiers Excel réels du client', () => {
         }
       }
 
-      // Le nombre de lignes n'est pas figé : ces fichiers vivent. Ce qui doit
-      // rester vrai, c'est que l'importateur les traite tous, et que les seuls
-      // refus portent sur des données réellement manquantes ou fausses.
-      expect(total).toBeGreaterThan(100);
-      expect(crees).toBeGreaterThan(90);
+      // Le nombre de lignes n'est pas figé : ces fichiers vivent — le client
+      // les a réduits à des jeux d'exemples. Ce qui doit rester vrai, c'est que
+      // l'importateur les traite TOUS, et que les seuls refus portent sur des
+      // données réellement manquantes, fausses ou en conflit.
+      expect(total).toBe(compterLignesReelles());
+      expect(total).toBeGreaterThan(20);
+      expect(crees).toBeGreaterThan(total / 2);
       for (const motif of motifs) {
-        expect(motif).toMatch(/[Pp]rix de vente|Clé de contrôle/);
+        expect(motif).toMatch(/[Pp]rix de vente|Clé de contrôle|apparaît déjà ligne/);
       }
-      expect(erreurs).toBeLessThan(total / 5);
+      expect(erreurs).toBeLessThan(total / 3);
     });
   });
 });
