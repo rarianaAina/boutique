@@ -185,7 +185,20 @@ export class SyncEngine {
         limit: PULL_BATCH,
       });
 
-      if (response.events.length === 0) return;
+      /*
+       * Un lot VIDE ne veut plus dire « plus rien à lire ».
+       *
+       * Le serveur filtre ce qu'il envoie : une boutique peut n'avoir rien à
+       * recevoir alors que le journal a grossi de cent événements qui ne la
+       * concernent pas. Le curseur doit tout de même avancer, sinon on
+       * réexaminerait cette portion à chaque synchronisation, indéfiniment.
+       */
+      if (response.events.length === 0) {
+        const jusqua = response.nextSince ?? since;
+        if (jusqua > since) await this.meta.set(META_KEYS.syncCursor, String(jusqua));
+        if (response.hasMore) continue;
+        return;
+      }
       outcome.pulled += response.events.length;
 
       const report = await applier.applyAll(response.events);
@@ -199,8 +212,10 @@ export class SyncEngine {
       // consignés dans `sync_inbox` avec leur motif et peuvent être rejoués
       // depuis l'écran de synchronisation. Bloquer le curseur sur un événement
       // fautif figerait tout le reste de la file, indéfiniment.
-      const lastSeq = response.events.at(-1)?.seq ?? since;
-      await this.meta.set(META_KEYS.syncCursor, String(lastSeq));
+      // On avance jusqu'où le serveur a REGARDÉ, et non jusqu'au dernier
+      // événement reçu : entre les deux se trouvent ceux qu'il a écartés.
+      const lastSeq = response.nextSince ?? response.events.at(-1)?.seq ?? since;
+      await this.meta.set(META_KEYS.syncCursor, String(Math.max(lastSeq, since)));
 
       if (!response.hasMore) return;
     }

@@ -202,3 +202,176 @@ describe('serveur de synchronisation', () => {
     });
   });
 });
+
+/* ─── Cloisonnement, journal et sauvegarde ─────────────────────────────── */
+
+const BOUTIQUE_C = 'shop-c';
+
+function transfert(
+  shopId: string,
+  type: string,
+  transferId: string,
+  parties?: { fromShopId?: string; toShopId?: string },
+): SyncEvent {
+  return evenement(shopId, {
+    type: type as SyncEvent['type'],
+    entity: 'transfer',
+    entityId: transferId,
+    payload: { transferId, ...parties },
+  });
+}
+
+describe('cloisonnement entre boutiques', () => {
+  let store: SyncStore;
+
+  beforeEach(() => {
+    store = new SyncStore(':memory:');
+    for (const [id, code, nom] of [
+      [BOUTIQUE_A, 'CENT', 'Centre'],
+      [BOUTIQUE_B, 'NORD', 'Nord'],
+      [BOUTIQUE_C, 'TMV', 'Tamatave'],
+    ] as const) {
+      store.registerShop({ id, code, name: nom, token: `jeton-${code}` });
+    }
+  });
+
+  const lire = (shopId: string, since = 0) =>
+    store.pull({ shopId, deviceId: `poste-${shopId}`, since });
+
+  it('distribue le catalogue à tout le monde', () => {
+    // Sans lui, un colis arriverait avec des articles inconnus et un prix vide.
+    store.push({ shopId: BOUTIQUE_A, deviceId: 'p', events: [evenement(BOUTIQUE_A)] });
+    expect(lire(BOUTIQUE_B).events).toHaveLength(1);
+    expect(lire(BOUTIQUE_C).events).toHaveLength(1);
+  });
+
+  it("ne distribue à personne les entrées de stock d'une boutique", () => {
+    store.push({
+      shopId: BOUTIQUE_A,
+      deviceId: 'p',
+      events: [reception(BOUTIQUE_A, '353879100000018')],
+    });
+    expect(lire(BOUTIQUE_B).events).toHaveLength(0);
+    expect(lire(BOUTIQUE_C).events).toHaveLength(0);
+  });
+
+  it("ne distribue un colis qu'à ses deux boutiques", () => {
+    const colis = newId();
+    store.push({
+      shopId: BOUTIQUE_A,
+      deviceId: 'p',
+      events: [
+        transfert(BOUTIQUE_A, 'STOCK_TRANSFER_REQUESTED', colis, {
+          fromShopId: BOUTIQUE_A,
+          toShopId: BOUTIQUE_B,
+        }),
+      ],
+    });
+
+    expect(lire(BOUTIQUE_B).events).toHaveLength(1);
+    // Tamatave n'a rien à savoir d'un colis qui ne la regarde pas.
+    expect(lire(BOUTIQUE_C).events).toHaveLength(0);
+  });
+
+  it("distribue l'accusé de réception à l'expéditeur, qui n'est pas nommé dedans", () => {
+    // Les événements de fin de course ne répètent pas les deux boutiques : sans
+    // la trace des parties, l'expéditeur manquerait l'accusé de réception de sa
+    // propre marchandise.
+    const colis = newId();
+    store.push({
+      shopId: BOUTIQUE_A,
+      deviceId: 'p',
+      events: [
+        transfert(BOUTIQUE_A, 'STOCK_TRANSFER_SHIPPED', colis, {
+          fromShopId: BOUTIQUE_A,
+          toShopId: BOUTIQUE_B,
+        }),
+      ],
+    });
+    const apres = lire(BOUTIQUE_A).serverSeq;
+
+    store.push({
+      shopId: BOUTIQUE_B,
+      deviceId: 'p',
+      events: [transfert(BOUTIQUE_B, 'STOCK_TRANSFER_RECEIVED', colis)],
+    });
+
+    expect(lire(BOUTIQUE_A, apres).events).toHaveLength(1);
+    expect(lire(BOUTIQUE_C, apres).events).toHaveLength(0);
+  });
+
+  it('renvoie jusqu’où il a regardé, même sans rien à distribuer', () => {
+    /*
+     * Sans ce repère, une boutique redemanderait éternellement la même portion
+     * du journal : elle ne peut plus déduire sa position du dernier événement
+     * reçu, puisqu'on lui en cache.
+     */
+    store.push({
+      shopId: BOUTIQUE_A,
+      deviceId: 'p',
+      events: [reception(BOUTIQUE_A, '353879100000018'), reception(BOUTIQUE_A, '353879100000026')],
+    });
+
+    const lot = lire(BOUTIQUE_C);
+    expect(lot.events).toHaveLength(0);
+    expect(lot.nextSince).toBe(lot.serverSeq);
+    expect(lot.nextSince).toBeGreaterThan(0);
+  });
+
+  it('ne dépasse jamais le rang qu’il a annoncé', () => {
+    store.push({ shopId: BOUTIQUE_A, deviceId: 'p', events: [evenement(BOUTIQUE_A)] });
+    const lot = store.pull({ shopId: BOUTIQUE_B, deviceId: 'p', since: 0, limit: 1 });
+    expect(lot.nextSince).toBeLessThanOrEqual(lot.serverSeq);
+    for (const event of lot.events) expect(event.seq).toBeLessThanOrEqual(lot.nextSince ?? 0);
+  });
+});
+
+describe('journal de consultation', () => {
+  let store: SyncStore;
+
+  beforeEach(() => {
+    store = new SyncStore(':memory:');
+    store.registerShop({ id: BOUTIQUE_A, code: 'CENT', name: 'Centre', token: 'jeton-a' });
+    store.registerShop({ id: BOUTIQUE_B, code: 'NORD', name: 'Nord', token: 'jeton-b' });
+  });
+
+  it('rend les derniers événements, du plus récent au plus ancien', () => {
+    store.push({
+      shopId: BOUTIQUE_A,
+      deviceId: 'p',
+      events: [evenement(BOUTIQUE_A), evenement(BOUTIQUE_A)],
+    });
+    const journal = store.journal();
+    expect(journal).toHaveLength(2);
+    expect(journal[0]!.seq).toBeGreaterThan(journal[1]!.seq);
+  });
+
+  it('nomme la boutique plutôt que son identifiant', () => {
+    // C'est une page qu'on ouvre en urgence : un UUID n'aide personne.
+    store.push({ shopId: BOUTIQUE_A, deviceId: 'p', events: [evenement(BOUTIQUE_A)] });
+    expect(store.journal()[0]!.shopLabel).toBe('Centre (CENT)');
+  });
+
+  it('se filtre par boutique', () => {
+    store.push({ shopId: BOUTIQUE_A, deviceId: 'p', events: [evenement(BOUTIQUE_A)] });
+    store.push({ shopId: BOUTIQUE_B, deviceId: 'p', events: [evenement(BOUTIQUE_B)] });
+    expect(store.journal({ shopId: BOUTIQUE_B })).toHaveLength(1);
+  });
+
+  it('montre où chaque poste en est de sa lecture', () => {
+    store.push({ shopId: BOUTIQUE_A, deviceId: 'p', events: [evenement(BOUTIQUE_A)] });
+    store.pull({ shopId: BOUTIQUE_B, deviceId: 'poste-nord-1', since: 0 });
+
+    const postes = store.cursors();
+    const nord = postes.find((poste) => poste.deviceId === 'poste-nord-1');
+    expect(nord?.shopLabel).toBe('Nord (NORD)');
+    expect(nord?.lastSeq).toBeGreaterThan(0);
+  });
+
+  it('borne ce qu’il rend, pour ne pas charger un journal entier', () => {
+    const evenements = Array.from({ length: 20 }, () => evenement(BOUTIQUE_A));
+    store.push({ shopId: BOUTIQUE_A, deviceId: 'p', events: evenements });
+    expect(store.journal({ limit: 5 })).toHaveLength(5);
+    expect(store.journal({ limit: 10_000 }).length).toBeLessThanOrEqual(500);
+  });
+});

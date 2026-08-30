@@ -58,6 +58,22 @@ CREATE TABLE IF NOT EXISTS identifier_registry (
 CREATE INDEX IF NOT EXISTS ix_registry_shop ON identifier_registry (shop_id);
 CREATE INDEX IF NOT EXISTS ix_registry_unit ON identifier_registry (unit_id);
 
+-- Parties d'un transfert.
+--
+-- Le serveur filtre ce qu'il envoie : un colis entre Antananarivo et Tamatave
+-- ne regarde pas une troisième boutique. Or les événements de FIN DE COURSE —
+-- réception, refus, annulation — ne répètent pas les deux boutiques dans leur
+-- charge. On retient donc les parties dès qu'un événement les nomme, et l'on
+-- s'y réfère ensuite.
+CREATE TABLE IF NOT EXISTS transfer_party (
+  transfer_id  TEXT PRIMARY KEY,
+  from_shop_id TEXT NOT NULL,
+  to_shop_id   TEXT NOT NULL,
+  noted_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_party_shops ON transfer_party (from_shop_id, to_shop_id);
+
 -- Position de lecture de chaque poste, pour le diagnostic d'un parc.
 CREATE TABLE IF NOT EXISTS device_cursor (
   device_id  TEXT PRIMARY KEY,

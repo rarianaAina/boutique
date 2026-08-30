@@ -120,6 +120,19 @@ export interface PullResponse {
   /** Vrai si le serveur a d'autres événements au-delà de ce lot. */
   hasMore: boolean;
   serverSeq: number;
+  /**
+   * Rang jusqu'auquel le serveur a EXAMINÉ le journal pour ce lot.
+   *
+   * Indispensable depuis que le serveur filtre ce qu'il envoie : le pair ne
+   * peut plus déduire sa position du dernier événement reçu, puisque des
+   * événements qui ne le concernent pas ont été écartés entre-temps. Sans ce
+   * repère, il redemanderait éternellement la même portion du journal, et la
+   * synchronisation ralentirait à mesure que le journal grossit.
+   *
+   * Absent d'un serveur d'une version antérieure : le pair retombe alors sur
+   * le dernier événement reçu, comme avant.
+   */
+  nextSince?: number;
 }
 
 /* ─── Réservation d'unité (§19) ─────────────────────────────────────────── */

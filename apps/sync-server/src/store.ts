@@ -32,6 +32,37 @@ import type {
 
 const SCHEMA = fileURLToPath(new URL('./schema.sql', import.meta.url));
 
+export interface JournalEntry {
+  seq: number;
+  id: string;
+  type: string;
+  entity: string;
+  entityId: string;
+  shopId: string;
+  shopLabel: string;
+  occurredAt: string;
+  receivedAt: string;
+}
+
+interface JournalRow {
+  seq: number;
+  id: string;
+  type: string;
+  entity: string;
+  entity_id: string;
+  shop_id: string;
+  occurred_at: string;
+  received_at: string;
+}
+
+export interface DeviceCursor {
+  deviceId: string;
+  shopId: string;
+  shopLabel: string;
+  lastSeq: number;
+  updatedAt: string;
+}
+
 export interface ShopRecord {
   id: string;
   code: string;
@@ -145,6 +176,7 @@ export class SyncStore {
           JSON.stringify(event.payload),
         );
       this.updateRegistry(event);
+      this.noterParties(event);
       this.db.exec('COMMIT');
     } catch (cause) {
       this.db.exec('ROLLBACK');
@@ -171,18 +203,84 @@ export class SyncStore {
     return { eventId: event.id, outcome: PUSH_OUTCOME.applied, seq: row.seq, reason: null };
   }
 
+  /**
+   * Retient les deux boutiques d'un colis, dès qu'un événement les nomme.
+   *
+   * Les événements de fin de course — réception, refus, annulation — ne les
+   * répètent pas : sans cette trace, le serveur ne saurait plus à qui les
+   * distribuer, et l'expéditeur manquerait l'accusé de réception de sa propre
+   * marchandise.
+   */
+  private noterParties(event: SyncEvent): void {
+    if (event.entity !== 'transfer') return;
+    const transferId = String(event.payload['transferId'] ?? event.entityId ?? '');
+    const to = String(event.payload['toShopId'] ?? '');
+    if (transferId === '' || to === '') return;
+    const from = String(event.payload['fromShopId'] ?? event.shopId);
+
+    this.db
+      .prepare(
+        `INSERT INTO transfer_party (transfer_id, from_shop_id, to_shop_id, noted_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (transfer_id) DO NOTHING`,
+      )
+      .run(transferId, from, to, nowIso());
+  }
+
   /* ─── Distribution ────────────────────────────────────────────────────── */
 
   /**
-   * Événements postérieurs à `since`, à l'exclusion de ceux émis par la
-   * boutique elle-même : les lui renvoyer la ferait travailler à réappliquer ce
-   * qu'elle vient d'écrire.
+   * Types partagés par tout le réseau.
+   *
+   * Le catalogue circule partout : sans lui, un colis arriverait avec des
+   * articles inconnus et un prix vide. Tout le reste — entrées, sorties,
+   * ventes, états d'appareils — n'appartient qu'à la boutique qui l'a vécu.
+   */
+  private static readonly PARTAGES = [
+    'PRODUCT_CREATED',
+    'PRODUCT_UPDATED',
+    'SUPPLIER_UPSERTED',
+    'CUSTOMER_UPSERTED',
+  ];
+
+  /**
+   * Événements postérieurs à `since` que cette boutique doit recevoir.
+   *
+   * LE FILTRAGE EST FAIT ICI, et non chez le pair. Tant que le serveur vivait
+   * sur le réseau local de l'éditeur, lui faire tout envoyer était acceptable :
+   * la boutique écartait ce qui ne la regardait pas. Sur Internet, autant
+   * qu'elle ne le reçoive jamais.
+   *
+   * Ses propres événements sont exclus : les lui renvoyer la ferait travailler
+   * à réappliquer ce qu'elle vient d'écrire.
    */
   pull(request: PullRequest): PullResponse {
     const limit = Math.min(request.limit ?? 200, 1000);
+    // Lu AVANT la requête : un événement inséré entre les deux porterait un
+    // rang supérieur, et ne serait donc pas sauté par le curseur.
+    const serverSeq = this.serverSeq();
+
+    const partages = SyncStore.PARTAGES.map(() => '?').join(', ');
     const rows = this.db
-      .prepare(`SELECT * FROM event WHERE seq > ? AND shop_id <> ? ORDER BY seq LIMIT ?`)
-      .all(request.since, request.shopId, limit + 1) as unknown as EventRow[];
+      .prepare(
+        `SELECT e.* FROM event e
+         LEFT JOIN transfer_party p ON p.transfer_id = e.entity_id
+          WHERE e.seq > ? AND e.seq <= ? AND e.shop_id <> ?
+            AND (
+              e.type IN (${partages})
+              OR (e.entity = 'transfer' AND (p.from_shop_id = ? OR p.to_shop_id = ?))
+            )
+          ORDER BY e.seq LIMIT ?`,
+      )
+      .all(
+        request.since,
+        serverSeq,
+        request.shopId,
+        ...SyncStore.PARTAGES,
+        request.shopId,
+        request.shopId,
+        limit + 1,
+      ) as unknown as EventRow[];
 
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
@@ -191,7 +289,10 @@ export class SyncStore {
     return {
       events: page.map(toSequencedEvent),
       hasMore,
-      serverSeq: this.serverSeq(),
+      serverSeq,
+      // Jusqu'où le journal a été EXAMINÉ. Quand la page est pleine, on s'arrête
+      // au dernier événement rendu ; sinon, tout a été vu jusqu'au bout.
+      nextSince: hasMore ? (page.at(-1)?.seq ?? request.since) : serverSeq,
     };
   }
 
@@ -205,6 +306,82 @@ export class SyncStore {
   eventCount(): number {
     const row = this.db.prepare('SELECT COUNT(*) AS total FROM event').get() as { total: number };
     return row.total;
+  }
+
+  /* ─── Diagnostic ──────────────────────────────────────────────────────── */
+
+  /**
+   * Derniers événements du journal, pour la page de consultation.
+   *
+   * ELLE EXISTE POUR UN SAMEDI SOIR : un colis n'est pas arrivé, le gérant
+   * attend au téléphone, et il faut savoir si l'expédition est bien au journal
+   * ou si elle dort encore dans la file d'une boutique. Sans cette page, il
+   * faudrait aller chercher un fichier sur une machine distante.
+   *
+   * En lecture seule, et protégée : le journal porte le nom des clients.
+   */
+  journal(options: { shopId?: string; limit?: number } = {}): JournalEntry[] {
+    const limit = Math.min(options.limit ?? 100, 500);
+    const rows = options.shopId
+      ? (this.db
+          .prepare(
+            `SELECT seq, id, type, entity, entity_id, shop_id, occurred_at, received_at
+               FROM event WHERE shop_id = ? ORDER BY seq DESC LIMIT ?`,
+          )
+          .all(options.shopId, limit) as unknown as JournalRow[])
+      : (this.db
+          .prepare(
+            `SELECT seq, id, type, entity, entity_id, shop_id, occurred_at, received_at
+               FROM event ORDER BY seq DESC LIMIT ?`,
+          )
+          .all(limit) as unknown as JournalRow[]);
+
+    const noms = new Map(this.shops().map((shop) => [shop.id, `${shop.name} (${shop.code})`]));
+    return rows.map((row) => ({
+      seq: row.seq,
+      id: row.id,
+      type: row.type,
+      entity: row.entity,
+      entityId: row.entity_id,
+      shopId: row.shop_id,
+      shopLabel: noms.get(row.shop_id) ?? row.shop_id,
+      occurredAt: row.occurred_at,
+      receivedAt: row.received_at,
+    }));
+  }
+
+  /** Position de lecture de chaque poste : qui est à jour, qui a décroché. */
+  cursors(): DeviceCursor[] {
+    const rows = this.db
+      .prepare(
+        'SELECT device_id, shop_id, last_seq, updated_at FROM device_cursor ORDER BY shop_id',
+      )
+      .all() as unknown as {
+      device_id: string;
+      shop_id: string;
+      last_seq: number;
+      updated_at: string;
+    }[];
+    const noms = new Map(this.shops().map((shop) => [shop.id, `${shop.name} (${shop.code})`]));
+    return rows.map((row) => ({
+      deviceId: row.device_id,
+      shopId: row.shop_id,
+      shopLabel: noms.get(row.shop_id) ?? row.shop_id,
+      lastSeq: row.last_seq,
+      updatedAt: row.updated_at,
+    }));
+  }
+
+  /**
+   * Copie cohérente du journal, pour la sauvegarde.
+   *
+   * `VACUUM INTO` écrit une base complète et non un instantané d'un fichier en
+   * cours d'écriture : recopier `sync.db` pendant qu'une boutique pousse un lot
+   * donnerait un fichier tronqué, qu'on ne découvrirait qu'en tentant de le
+   * restaurer.
+   */
+  backupTo(path: string): void {
+    this.db.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
   }
 
   /* ─── Détention des identifiants ──────────────────────────────────────── */

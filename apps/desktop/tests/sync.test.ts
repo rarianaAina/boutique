@@ -92,8 +92,9 @@ describe('synchronisation', () => {
       const resultat = await sync(network.b);
 
       expect(await new UnitRepository(network.b.db).byIdentifier(imei[0]!)).toBeNull();
-      // Écartés, et non « en échec » : rien n'est à corriger.
-      expect(resultat.applied.ignored).toBeGreaterThan(0);
+      // Le serveur ne les envoie même pas : B n'a rien à écarter, rien à
+      // corriger, et n'a jamais eu connaissance de ces appareils.
+      expect(resultat.applied.ignored).toBe(0);
       expect(resultat.applied.failed).toBe(0);
     } finally {
       network.close();
@@ -162,14 +163,13 @@ describe('synchronisation', () => {
       const second = await sync(network.b);
       const third = await sync(network.b);
 
-      // Les trois appareils de A sont écartés une fois, et une seule : le
-      // curseur avance sur eux, sinon on les réexaminerait à chaque
-      // synchronisation, indéfiniment.
-      expect(first.applied.ignored).toBe(3);
-      expect(second.applied.ignored).toBe(0);
-      expect(third.applied.ignored).toBe(0);
+      // Les trois appareils de A ne sont jamais transmis, et le curseur passe
+      // tout de même par-dessus : sans cela, B réexaminerait cette portion du
+      // journal à chaque synchronisation, indéfiniment.
+      expect(first.applied.ignored).toBe(0);
       expect(second.pulled).toBe(0);
       expect(third.pulled).toBe(0);
+      expect(third.cursor).toBeGreaterThanOrEqual(first.cursor);
 
       // Aucun appareil de A chez B, et surtout aucun doublon : le curseur a
       // bien avancé sur les événements écartés.
@@ -177,6 +177,35 @@ describe('synchronisation', () => {
         'SELECT COUNT(*) AS total FROM product_unit',
       );
       expect(units[0]?.total).toBe(0);
+    } finally {
+      network.close();
+    }
+  });
+
+  it('avance le curseur même quand rien ne la concerne', async () => {
+    /*
+     * Le piège que `nextSince` évite.
+     *
+     * A vend toute la journée : cent événements entrent au journal, dont aucun
+     * ne regarde B. Si le curseur de B restait figé au dernier événement qu'elle
+     * a REÇU, elle redemanderait éternellement la même portion, et chaque
+     * synchronisation deviendrait plus lente que la précédente.
+     */
+    const network = await createNetwork();
+    try {
+      const productId = await seedCatalog(network);
+      await sync(network.b); // B prend connaissance du catalogue.
+      const depart = (await sync(network.b)).cursor;
+
+      await new StockService(network.a.context).receiveUnits({
+        productId,
+        units: imeiSeries(5).map((value) => ({ imei1: value })),
+      });
+      await sync(network.a);
+
+      const resultat = await sync(network.b);
+      expect(resultat.pulled).toBe(0);
+      expect(resultat.cursor).toBeGreaterThan(depart);
     } finally {
       network.close();
     }
