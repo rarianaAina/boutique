@@ -3,6 +3,7 @@ import {
   SYNC_EVENT,
   Validator,
   derivedSku,
+  isDerivedSku,
   isEmail,
   isPhone,
   nextFreeSku,
@@ -98,10 +99,19 @@ export class ProductService {
     assertCan(this.context, PERMISSIONS.productManage);
     const before = await this.products.byId(id);
     if (!before) throw new BusinessError('Produit introuvable.');
-    // À la modification, une référence vidée n'est pas régénérée : on conserve
-    // celle du produit. Effacer un champ ne doit jamais renommer une fiche que
-    // des documents citent déjà.
-    const complet = this.normalise({ ...input, sku: input.sku?.trim() || before.sku });
+    // À la modification, une référence SAISIE est conservée telle quelle :
+    // effacer le champ ne doit jamais renommer une fiche que des documents
+    // citent déjà.
+    //
+    // Une référence DÉRIVÉE, en revanche, suit la déclinaison. Sans cela, un
+    // produit passé de « 512 Silver » à « 128 Rouge » garderait un SKU
+    // `AUTO-…-512-SILVER` qui contredirait sa propre fiche — exactement le
+    // genre de détail qui fait douter de tout le reste.
+    const conserve = input.sku?.trim() || (isDerivedSku(before.sku) ? '' : before.sku);
+    const complet = this.normalise({
+      ...input,
+      sku: conserve || (await this.resolveSku(input, id)),
+    });
     await this.validate(complet, id);
 
     // Changer le mode de suivi d'un produit qui a déjà du stock rendrait
@@ -286,6 +296,46 @@ export class ProductService {
     });
 
     return { definitive: true };
+  }
+
+  /**
+   * Supprime plusieurs produits d'un coup.
+   *
+   * Chaque produit garde sa propre issue — effacé ou archivé selon son
+   * histoire : appliquer la même décision à tout le lot effacerait des fiches
+   * citées par des ventes, ou archiverait inutilement des fiches vierges.
+   *
+   * Un échec sur l'un n'interrompt pas les autres, et le rapport nomme ce qui
+   * n'a pas pu être supprimé : découvrir les trois problèmes d'un coup vaut
+   * mieux que les découvrir un par un.
+   */
+  async removeMany(ids: readonly string[]): Promise<{
+    deleted: number;
+    archived: number;
+    failed: { id: string; name: string; reason: string }[];
+  }> {
+    assertCan(this.context, PERMISSIONS.productManage);
+    const rapport = {
+      deleted: 0,
+      archived: 0,
+      failed: [] as { id: string; name: string; reason: string }[],
+    };
+
+    for (const id of ids) {
+      const produit = await this.products.byId(id);
+      try {
+        const resultat = await this.remove(id);
+        if (resultat.definitive) rapport.deleted += 1;
+        else rapport.archived += 1;
+      } catch (cause) {
+        rapport.failed.push({
+          id,
+          name: produit?.name ?? id,
+          reason: cause instanceof Error ? cause.message : String(cause),
+        });
+      }
+    }
+    return rapport;
   }
 
   /** Archivage : le produit disparaît des listes, son historique reste lisible. */

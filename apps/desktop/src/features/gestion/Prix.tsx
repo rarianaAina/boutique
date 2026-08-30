@@ -344,20 +344,21 @@ function HistoriqueProduit({
   nom: string;
   onFermer: () => void;
 }) {
-  const { db } = useSession();
+  const { db, shopId } = useSession();
   const monnaie = useMonnaie();
   const [nature, setNature] = useState('');
 
   const etat = useChargement(async () => {
     if (!db) throw new Error('Base indisponible.');
     const depot = new PriceHistoryRepository(db);
-    const [points, parFournisseur, produit] = await Promise.all([
+    const [points, parFournisseur, lots, produit] = await Promise.all([
       depot.forProduct(productId, nature ? (nature as PriceKind) : undefined),
       depot.lastObservedBySupplier(productId),
+      depot.lotsOf(productId, shopId),
       new ProductRepository(db).byId(productId),
     ]);
-    return { points, parFournisseur, produit };
-  }, [db, productId, nature]);
+    return { points, parFournisseur, lots, produit };
+  }, [db, shopId, productId, nature]);
 
   return (
     <Dialogue
@@ -397,6 +398,74 @@ function HistoriqueProduit({
                   {monnaie(etat.donnees.produit.salePrice - etat.donnees.produit.purchasePrice)}
                 </p>
               </div>
+            </div>
+          ) : null}
+
+          {(etat.donnees?.lots.length ?? 0) > 0 ? (
+            <div>
+              <h3 className="mb-1.5 text-encre-800">Lots d'approvisionnement</h3>
+              <Information>
+                Chaque arrivage avec son coût, sa quantité et le prix de vente en vigueur ce
+                jour-là. C'est la lecture qui répond à « combien m'a coûté le lot de lundi, et à
+                combien l'ai-je vendu ? ».
+              </Information>
+              <table className="tableau mt-2">
+                <thead>
+                  <tr>
+                    <th>Arrivage</th>
+                    <th>Fournisseur</th>
+                    <th>Document</th>
+                    <th className="num">Reçus</th>
+                    <th className="num">Restants</th>
+                    <th className="num">Coût unitaire</th>
+                    <th className="num">Vendu à</th>
+                    <th className="num">Marge unitaire</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(etat.donnees?.lots ?? []).map((lot, index) => (
+                    <tr key={`${lot.at}-${lot.unitCost}-${index}`}>
+                      <td>{formaterDate(lot.at)}</td>
+                      <td>{lot.supplierName ?? '—'}</td>
+                      <td className="mono text-xs">{lot.sourceLabel ?? '—'}</td>
+                      <td className="num">{lot.received}</td>
+                      <td className="num">
+                        {lot.remaining < 0 ? (
+                          <span
+                            className="text-encre-400"
+                            title="Suivi par quantité : le reste d'un lot précis n'est pas connaissable"
+                          >
+                            —
+                          </span>
+                        ) : (
+                          <Badge ton={lot.remaining > 0 ? 'succes' : 'neutre'}>
+                            {lot.remaining}
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="num">{monnaie(lot.unitCost)}</td>
+                      <td className="num">
+                        {lot.salePriceThen !== null ? monnaie(lot.salePriceThen) : '—'}
+                      </td>
+                      <td className="num font-medium">
+                        {lot.salePriceThen !== null ? (
+                          <span
+                            className={
+                              lot.salePriceThen - lot.unitCost >= 0
+                                ? 'text-succes-700'
+                                : 'text-danger-700'
+                            }
+                          >
+                            {monnaie(lot.salePriceThen - lot.unitCost)}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : null}
 

@@ -4,6 +4,7 @@ import { SettingRepository, SETTING_KEYS } from '@/core/db/repositories/setting.
 import { ShopRepository } from '@/core/db/repositories/shop.repository';
 import { BackupService, type BackupInfo } from '@/core/services/backup.service';
 import { SeedService } from '@/core/services/seed.service';
+import type { CostMethod } from '@/core/services/cost.service';
 import { StockRepository } from '@/core/db/repositories/stock.repository';
 import {
   Carte,
@@ -46,6 +47,7 @@ export function Parametres() {
   const [tva, setTva] = useState(settings.taxEnabled);
   const [negatif, setNegatif] = useState(settings.allowNegativeStock);
   const [imeiStrict, setImeiStrict] = useState(settings.strictImeiChecksum);
+  const [valorisation, setValorisation] = useState<CostMethod>(settings.costMethod);
   const [sauvegardeAuto, setSauvegardeAuto] = useState(settings.backupDaily);
   const [occupe, setOccupe] = useState(false);
   const [demonstration, setDemonstration] = useState(false);
@@ -102,6 +104,7 @@ export function Parametres() {
       );
       await depot.set(SETTING_KEYS.allowNegativeStock, negatif, shopId);
       await depot.set(SETTING_KEYS.strictImeiChecksum, imeiStrict, shopId);
+      await depot.set(SETTING_KEYS.costMethod, valorisation, shopId);
       await depot.set(SETTING_KEYS.backupDaily, sauvegardeAuto, shopId);
       await depot.set(
         SETTING_KEYS.backupKeep,
@@ -239,6 +242,16 @@ export function Parametres() {
               value={champ('seuil', String(settings.lowStockThreshold))}
               onChange={(e) => changer('seuil', e.target.value)}
               aide="S'applique aux produits qui n'ont pas leur propre seuil."
+            />
+            <Liste
+              label="Valorisation des sorties de stock"
+              value={valorisation}
+              onChange={(e) => setValorisation(e.target.value as CostMethod)}
+              options={[
+                { valeur: 'CATALOGUE', libelle: "Prix d'achat du catalogue" },
+                { valeur: 'FIFO', libelle: 'FIFO — premier entré, premier sorti' },
+              ]}
+              aide="Ne concerne que les produits suivis par quantité. Un appareil identifié porte toujours son propre coût d'acquisition, ce qui est plus exact que toute convention."
             />
             <Case
               label="Contrôler la clé des IMEI"

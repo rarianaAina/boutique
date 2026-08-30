@@ -192,6 +192,134 @@ export class PriceHistoryRepository {
   }
 
   /**
+   * Lots d'approvisionnement d'un produit.
+   *
+   * C'est la vue que réclame un gérant qui réapprovisionne au fil des cours :
+   * « le lot de lundi m'a coûté 12 000 et je l'ai vendu 15 000 ; celui de
+   * jeudi m'a coûté 13 000 et je l'ai vendu 16 000 ». Un simple historique de
+   * prix ne le dit pas — il faut relier le COÛT d'une entrée à la QUANTITÉ
+   * qu'elle a apportée, à ce qu'il en reste, et au prix de vente en vigueur à
+   * ce moment-là.
+   *
+   * Les deux modèles de stock sont réunis dans la même vue : un lot d'appareils
+   * identifiés se compte en unités, un lot de produits par quantité se compte
+   * en mouvements d'entrée. Un gérant ne veut pas savoir lequel des deux il
+   * consulte, il veut voir ses arrivages.
+   */
+  async lotsOf(
+    productId: string,
+    shopId: string,
+  ): Promise<
+    {
+      at: IsoDate;
+      unitCost: Money;
+      received: number;
+      remaining: number;
+      supplierName: string | null;
+      sourceLabel: string | null;
+      /** Prix de vente en vigueur à la date du lot, si l'historique le sait. */
+      salePriceThen: Money | null;
+    }[]
+  > {
+    const unites = await this.db.select<{
+      at: string;
+      unit_cost: number;
+      received: number;
+      remaining: number;
+      supplier_name: string | null;
+      source_label: string | null;
+    }>(
+      `SELECT substr(COALESCE(u.received_at, u.created_at), 1, 10) AS at,
+              u.cost_price AS unit_cost,
+              COUNT(*) AS received,
+              SUM(CASE WHEN u.status IN ('IN_STOCK','RESERVED','RETURNED') THEN 1 ELSE 0 END)
+                AS remaining,
+              s.name AS supplier_name,
+              p.number AS source_label
+       FROM product_unit u
+       LEFT JOIN supplier s ON s.id = u.supplier_id
+       LEFT JOIN purchase p ON p.id = u.purchase_id
+       WHERE u.product_id = ? AND u.shop_id = ? AND u.deleted_at IS NULL
+       GROUP BY at, u.cost_price, u.supplier_id, u.purchase_id
+       ORDER BY at DESC`,
+      [productId, shopId],
+    );
+
+    const quantites = await this.db.select<{
+      at: string;
+      unit_cost: number;
+      received: number;
+      supplier_name: string | null;
+      source_label: string | null;
+    }>(
+      `SELECT substr(m.occurred_at, 1, 10) AS at,
+              COALESCE(m.unit_cost, 0) AS unit_cost,
+              SUM(m.quantity) AS received,
+              s.name AS supplier_name,
+              m.source_label
+       FROM stock_movement m
+       LEFT JOIN purchase p ON p.id = m.source_id AND m.source = 'PURCHASE'
+       LEFT JOIN supplier s ON s.id = p.supplier_id
+       WHERE m.product_id = ? AND m.shop_id = ? AND m.unit_id IS NULL AND m.quantity > 0
+       GROUP BY at, m.unit_cost, m.source_label
+       ORDER BY at DESC`,
+      [productId, shopId],
+    );
+
+    const ventes = await this.db.select<{ at: string; new_value: number }>(
+      `SELECT at, new_value FROM price_history
+       WHERE product_id = ? AND kind = 'SALE' ORDER BY at`,
+      [productId],
+    );
+
+    /**
+     * Prix de vente en vigueur à une date : le dernier fixé AVANT elle.
+     *
+     * Quand aucun point ne la précède, on retient le PREMIER connu plutôt que
+     * rien. Le cas se présente pour les lots antérieurs à l'historique — un
+     * stock déjà en rayon quand le logiciel a été installé. Le premier prix
+     * enregistré est celui du produit à sa création : c'est l'approximation la
+     * plus proche, et infiniment plus utile qu'une case vide.
+     *
+     * Sans aucun point, on renvoie `null` : inventer un prix produirait une
+     * marge fausse, ce qui est pire que de ne rien afficher.
+     */
+    const prixAlors = (jour: string): Money | null => {
+      let valeur: number | null = null;
+      for (const point of ventes) {
+        if (point.at.slice(0, 10) <= jour) valeur = point.new_value;
+        else break;
+      }
+      return valeur ?? ventes[0]?.new_value ?? null;
+    };
+
+    const lots = [
+      ...unites.map((ligne) => ({
+        at: ligne.at,
+        unitCost: ligne.unit_cost,
+        received: ligne.received,
+        remaining: ligne.remaining,
+        supplierName: ligne.supplier_name,
+        sourceLabel: ligne.source_label,
+        salePriceThen: prixAlors(ligne.at),
+      })),
+      ...quantites.map((ligne) => ({
+        at: ligne.at,
+        unitCost: ligne.unit_cost,
+        received: ligne.received,
+        // Un produit par quantité n'a pas d'exemplaire à suivre : ce qui reste
+        // d'un lot précis n'est pas connaissable ligne à ligne.
+        remaining: -1,
+        supplierName: ligne.supplier_name,
+        sourceLabel: ligne.source_label,
+        salePriceThen: prixAlors(ligne.at),
+      })),
+    ];
+
+    return lots.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  }
+
+  /**
    * Produits dont le coût réel s'est éloigné du prix catalogue.
    *
    * L'écart est ce qui doit alerter : un prix d'achat catalogue périmé fausse
