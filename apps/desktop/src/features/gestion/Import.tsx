@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { IMPORT_MODE } from '@boutique/shared';
+import { IMPORT_MODE, PERMISSIONS } from '@boutique/shared';
 import type { ImportMode } from '@boutique/shared';
 import {
   listSheets,
@@ -10,6 +10,7 @@ import {
 } from '@/core/import/workbook';
 import { IMPORT_FIELDS, suggestMapping } from '@/core/import/fields';
 import { ImportService, type ImportPlan, type ImportResult } from '@/core/services/import.service';
+import { FAMILLES, devinerFamille } from '@/core/import/familles';
 import {
   Carte,
   CarteChiffre,
@@ -18,6 +19,7 @@ import {
   Erreur,
   Information,
   Avertissement,
+  LectureSeule,
   Vide,
 } from '@/components/ui/Page';
 import { Badge } from '@/components/ui/Badge';
@@ -26,7 +28,7 @@ import { Case, Liste } from '@/components/ui/Champ';
 import { Confirmation } from '@/components/ui/Dialogue';
 import { Tableau } from '@/components/ui/Tableau';
 import { useNotifications } from '@/components/ui/Notifications';
-import { useContexte } from '@/app/session';
+import { useContexte, useSession } from '@/app/session';
 import { formaterDate, messageDe, useChargement } from '@/app/hooks';
 
 /**
@@ -45,8 +47,10 @@ type Etape = 'fichier' | 'mapping' | 'apercu' | 'rapport';
 
 export function Import() {
   const contexte = useContexte();
+  const { peut } = useSession();
   const { notifier } = useNotifications();
   const champFichier = useRef<HTMLInputElement>(null);
+  const peutImporter = peut(PERMISSIONS.importRun);
 
   const [etape, setEtape] = useState<Etape>('fichier');
   const [nomFichier, setNomFichier] = useState('');
@@ -55,6 +59,8 @@ export function Import() {
   const [feuille, setFeuille] = useState<SheetData | null>(null);
   const [mapping, setMapping] = useState<Record<number, string>>({});
   const [mode, setMode] = useState<ImportMode>(IMPORT_MODE.createOnly);
+  // Famille des articles de la feuille. '' = laisser le fichier décider.
+  const [famille, setFamille] = useState<string>('');
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [resultat, setResultat] = useState<ImportResult | null>(null);
   /** Importer toutes les feuilles d'un coup : les classeurs du client en ont
@@ -79,17 +85,24 @@ export function Import() {
       setNomFichier(fichier.name);
 
       const premiere = liste[0];
-      if (premiere) choisirFeuille(livre, premiere.name);
+      if (premiere) choisirFeuille(livre, premiere.name, fichier.name);
       setEtape('mapping');
     } catch (cause) {
       setErreur(`Fichier illisible : ${messageDe(cause)}`);
     }
   };
 
-  const choisirFeuille = (livre: ReturnType<typeof readWorkbook>, nom: string) => {
+  const choisirFeuille = (
+    livre: ReturnType<typeof readWorkbook>,
+    nom: string,
+    fichier = nomFichier,
+  ) => {
     const donnees = readSheet(livre, nom);
     setFeuille(donnees);
     setMapping(suggestMapping(donnees.headers));
+    // La famille est devinée par feuille, jamais par classeur : « Boitiers et
+    // câbles » en contient trois, qui ne se rangent pas au même endroit.
+    setFamille(devinerFamille(nom, etiquetteDe(donnees), fichier)?.code ?? '');
     setPlan(null);
   };
 
@@ -98,7 +111,7 @@ export function Import() {
     setErreur(null);
     setOccupe(true);
     try {
-      const prepare = await service.plan(feuille, mapping, mode, nomFichier);
+      const prepare = await service.plan(feuille, mapping, mode, nomFichier, famille || null);
       setPlan(prepare);
       setEtape('apercu');
     } catch (cause) {
@@ -158,6 +171,7 @@ export function Import() {
           suggestMapping(donnees.headers),
           mode,
           `${nomFichier} — ${info.name}`,
+          devinerFamille(info.name, etiquetteDe(donnees), nomFichier)?.code ?? null,
         );
         if (prepare.report.missingFields.length > 0) {
           throw new Error(
@@ -209,6 +223,7 @@ export function Import() {
 
       <Fil etape={etape} />
 
+      {!peutImporter ? <LectureSeule quoi="importer des fichiers" /> : null}
       {erreur ? <Erreur message={erreur} /> : null}
 
       {etape === 'fichier' ? (
@@ -233,6 +248,7 @@ export function Import() {
               variante="principal"
               icone="import"
               taille="grand"
+              disabled={!peutImporter}
               onClick={() => champFichier.current?.click()}
             >
               Choisir un fichier
@@ -271,6 +287,20 @@ export function Import() {
                 aide="En création seule, un produit déjà connu est laissé intact."
               />
             </div>
+
+            <Liste
+              label="Type de produit importé"
+              value={famille}
+              onChange={(evenement) => setFamille(evenement.target.value)}
+              options={[
+                { valeur: '', libelle: 'Déduire du fichier (colonne « Étiquettes »)' },
+                ...FAMILLES.map((element) => ({
+                  valeur: element.code,
+                  libelle: `${element.label} — suivi ${LIBELLE_SUIVI[element.tracking]}`,
+                })),
+              ]}
+              aide="Détermine la catégorie des produits créés et leur mode de suivi. Proposé d'après le nom de la feuille."
+            />
 
             <Information>
               L'association a été proposée d'après les en-têtes du fichier. Vérifiez-la : c'est elle
@@ -640,4 +670,33 @@ function Fil({ etape }: { etape: Etape }) {
       ))}
     </div>
   );
+}
+
+const LIBELLE_SUIVI: Record<string, string> = {
+  IMEI: 'par IMEI',
+  SERIAL: 'par numéro de série',
+  QUANTITY: 'par quantité',
+};
+
+/**
+ * Valeur de la colonne « Étiquettes » sur la première ligne remplie.
+ *
+ * C'est le meilleur indice de famille dont on dispose quand le nom de la
+ * feuille est générique (« Feuil1 ») : le client y écrit déjà « Boitiers » ou
+ * « Cache-écrans ».
+ */
+function etiquetteDe(donnees: SheetData): string {
+  const colonne = donnees.headers.findIndex((entete) =>
+    entete
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .includes('etiquette'),
+  );
+  if (colonne < 0) return '';
+  for (const ligne of donnees.rows) {
+    const valeur = ligne[colonne]?.trim();
+    if (valeur) return valeur;
+  }
+  return '';
 }

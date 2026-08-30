@@ -6,6 +6,7 @@ import { CategoryRepository } from '../db/repositories/category.repository';
 import { SupplierRepository } from '../db/repositories/supplier.repository';
 import { AUDIT_ACTIONS } from '../db/repositories/audit.repository';
 import { analyze, type AnalysisReport, type AnalyzedRow } from '../import/analyze';
+import { FAMILLE_PAR_CODE } from '../import/familles';
 import type { SheetData } from '../import/workbook';
 import { AuditService } from './audit.service';
 import { StockService } from './stock.service';
@@ -88,6 +89,8 @@ export interface ImportPlan {
   fileName: string;
   sheetName: string;
   mapping: Record<number, string>;
+  /** Famille choisie avant l'analyse, conservée pour l'historique des imports. */
+  famille: string | null;
 }
 
 export interface ImportResult {
@@ -125,6 +128,7 @@ export class ImportService {
     mapping: Record<number, string>,
     mode: ImportMode,
     fileName: string,
+    familleCode?: string | null,
   ): Promise<ImportPlan> {
     assertCan(this.context, PERMISSIONS.importRun);
 
@@ -140,6 +144,8 @@ export class ImportService {
       }
     }
 
+    const famille = familleCode ? (FAMILLE_PAR_CODE.get(familleCode) ?? null) : null;
+
     const existingSkus = await this.existingSkus([...skus]);
     const existingIdentifiers = await this.units.existingIdentifiers([...identifiers]);
 
@@ -149,9 +155,18 @@ export class ImportService {
       mode,
       currencyDecimals: this.context.settings.currency.decimals,
       strictImeiChecksum: this.context.settings.strictImeiChecksum,
+      forcedCategory: famille?.label ?? null,
+      forcedTracking: famille?.tracking ?? null,
     });
 
-    return { report, mode, fileName, sheetName: sheet.name, mapping };
+    return {
+      report,
+      mode,
+      fileName,
+      sheetName: sheet.name,
+      mapping,
+      famille: famille?.code ?? null,
+    };
   }
 
   /**
