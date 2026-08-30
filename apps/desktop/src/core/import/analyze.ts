@@ -401,6 +401,14 @@ function readQuantity(value: string | undefined, tracking: Tracking): number {
  * santé de la batterie et le nombre de cycles sont exactement ce qu'un vendeur
  * consulte avant de céder un téléphone d'occasion.
  */
+/*
+ * L'EMPLACEMENT N'EST PLUS REPRIS ICI, et c'est délibéré.
+ *
+ * « DPKNG/Stock » désigne une BOUTIQUE, pas une caractéristique du produit. Le
+ * ranger dans les attributs donnait à un même modèle un emplacement unique,
+ * forcément faux dès qu'il était présent dans deux boutiques. Il sert
+ * désormais à proposer la boutique de destination de l'import.
+ */
 function attributesOf(
   values: Record<string, string>,
   compatibilites: string[] = [],
@@ -419,7 +427,6 @@ function attributesOf(
   reprendre('withCable', 'avec_cable');
   reprendre('color', 'couleur');
   reprendre('capacity', 'capacite');
-  reprendre('location', 'emplacement');
   reprendre('warranty', 'garantie', ' mois');
   reprendre('batteryHealth', 'batterie', ' %');
   reprendre('cycles', 'cycles');

@@ -11,6 +11,8 @@ import {
 import { IMPORT_FIELDS, suggestMapping } from '@/core/import/fields';
 import { ImportService, type ImportPlan, type ImportResult } from '@/core/services/import.service';
 import { FAMILLES, devinerFamille } from '@/core/import/familles';
+import { boutiqueDepuisEmplacement, emplacementDeLaFeuille } from '@/core/import/emplacement';
+import { ShopRepository } from '@/core/db/repositories/shop.repository';
 import {
   Carte,
   CarteChiffre,
@@ -47,7 +49,7 @@ type Etape = 'fichier' | 'mapping' | 'apercu' | 'rapport';
 
 export function Import() {
   const contexte = useContexte();
-  const { peut } = useSession();
+  const { peut, db, shopId, shopName } = useSession();
   const { notifier } = useNotifications();
   const champFichier = useRef<HTMLInputElement>(null);
   const peutImporter = peut(PERMISSIONS.importRun);
@@ -61,6 +63,14 @@ export function Import() {
   const [mode, setMode] = useState<ImportMode>(IMPORT_MODE.createOnly);
   // Famille des articles de la feuille. '' = laisser le fichier décider.
   const [famille, setFamille] = useState<string>('');
+  /**
+   * Boutique où se trouve réellement la marchandise.
+   *
+   * Proposée d'après la colonne « Emplacement », jamais imposée : deviner en
+   * silence ferait entrer un stock entier dans la mauvaise boutique, et
+   * l'erreur ne se verrait qu'à l'inventaire suivant.
+   */
+  const [destination, setDestination] = useState<string>('');
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [resultat, setResultat] = useState<ImportResult | null>(null);
   /** Importer toutes les feuilles d'un coup : les classeurs du client en ont
@@ -72,6 +82,9 @@ export function Import() {
   const [annulation, setAnnulation] = useState<string | null>(null);
 
   const service = new ImportService(contexte);
+  // Chargées une fois : le choix de destination et la lecture de la colonne
+  // « Emplacement » en ont besoin dès l'ouverture du fichier.
+  const boutiques = useChargement(async () => (db ? new ShopRepository(db).list() : []), [db]);
   const historique = useChargement(async () => service.history(20), [contexte.db, resultat]);
 
   const ouvrirFichier = async (fichier: File) => {
@@ -103,6 +116,14 @@ export function Import() {
     // La famille est devinée par feuille, jamais par classeur : « Boitiers et
     // câbles » en contient trois, qui ne se rangent pas au même endroit.
     setFamille(devinerFamille(nom, etiquetteDe(donnees), fichier)?.code ?? '');
+    // L'emplacement du fichier désigne une boutique : « DPKNG/Stock », c'est
+    // la boutique DPKNG. Le suffixe décrit un rayon, que le logiciel ne suit pas.
+    setDestination(
+      boutiqueDepuisEmplacement(
+        emplacementDeLaFeuille(donnees.headers, donnees.rows),
+        boutiques.donnees ?? [],
+      )?.id ?? '',
+    );
     setPlan(null);
   };
 
@@ -111,7 +132,14 @@ export function Import() {
     setErreur(null);
     setOccupe(true);
     try {
-      const prepare = await service.plan(feuille, mapping, mode, nomFichier, famille || null);
+      const prepare = await service.plan(
+        feuille,
+        mapping,
+        mode,
+        nomFichier,
+        famille || null,
+        destination || null,
+      );
       setPlan(prepare);
       setEtape('apercu');
     } catch (cause) {
@@ -160,6 +188,7 @@ export function Import() {
       unitsCreated: 0,
       categoriesCreated: 0,
       suppliersCreated: 0,
+      transfer: null,
     };
     try {
       for (const info of feuilles) {
@@ -172,6 +201,10 @@ export function Import() {
           mode,
           `${nomFichier} — ${info.name}`,
           devinerFamille(info.name, etiquetteDe(donnees), nomFichier)?.code ?? null,
+          boutiqueDepuisEmplacement(
+            emplacementDeLaFeuille(donnees.headers, donnees.rows),
+            boutiques.donnees ?? [],
+          )?.id ?? null,
         );
         if (prepare.report.missingFields.length > 0) {
           throw new Error(
@@ -287,6 +320,22 @@ export function Import() {
                 aide="En création seule, un produit déjà connu est laissé intact."
               />
             </div>
+
+            <Liste
+              label="Boutique où se trouve la marchandise"
+              value={destination}
+              onChange={(evenement) => setDestination(evenement.target.value)}
+              options={[
+                { valeur: '', libelle: `${shopName} — ici` },
+                ...(boutiques.donnees ?? [])
+                  .filter((boutique) => boutique.id !== shopId)
+                  .map((boutique) => ({
+                    valeur: boutique.id,
+                    libelle: `${boutique.name} (${boutique.code}) — par transfert`,
+                  })),
+              ]}
+              aide="Une autre boutique : la marchandise entre ici puis part aussitôt en transfert, que son gérant devra réceptionner."
+            />
 
             <Liste
               label="Type de produit importé"
@@ -504,6 +553,17 @@ export function Import() {
               ton={resultat.errors > 0 ? 'danger' : 'neutre'}
             />
           </div>
+
+          {resultat.transfer ? (
+            <Information>
+              La marchandise était destinée à une autre boutique : le transfert{' '}
+              <strong>{resultat.transfer.number}</strong> a été émis pour {resultat.transfer.lines}{' '}
+              ligne{resultat.transfer.lines > 1 ? 's' : ''}. Le stock n’arrivera dans cette boutique
+              que lorsque son gérant aura réceptionné le colis — c’est lui, et personne d’autre, qui
+              confirme ce qui est arrivé.
+            </Information>
+          ) : null}
+
           <LignesEnErreur batchId={resultat.batchId} />
         </>
       ) : null}

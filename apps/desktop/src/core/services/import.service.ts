@@ -10,6 +10,9 @@ import { FAMILLE_PAR_CODE } from '../import/familles';
 import type { SheetData } from '../import/workbook';
 import { AuditService } from './audit.service';
 import { StockService } from './stock.service';
+import { TransferService } from './transfer.service';
+import { ShopRepository } from '../db/repositories/shop.repository';
+import type { TransferLineDraft } from '../db/repositories/transfer.repository';
 import { ProductService } from './catalog.service';
 import { BusinessError, assertCan, type AppContext } from './context';
 
@@ -91,6 +94,14 @@ export interface ImportPlan {
   mapping: Record<number, string>;
   /** Famille choisie avant l'analyse, conservée pour l'historique des imports. */
   famille: string | null;
+  /**
+   * Boutique où se trouve réellement la marchandise.
+   *
+   * `null` ou la boutique courante : l'import entre le stock ici, comme
+   * toujours. Une AUTRE boutique : le stock entre ici puis part aussitôt en
+   * transfert, que la destination devra réceptionner. Voir `apply`.
+   */
+  destinationShopId: string | null;
 }
 
 export interface ImportResult {
@@ -103,6 +114,8 @@ export interface ImportResult {
   /** Catégories et fournisseurs créés au passage, à partir du fichier. */
   categoriesCreated: number;
   suppliersCreated: number;
+  /** Transfert émis quand la marchandise était destinée à une autre boutique. */
+  transfer: { id: string; number: string; toShopId: string; lines: number } | null;
 }
 
 export class ImportService {
@@ -129,6 +142,7 @@ export class ImportService {
     mode: ImportMode,
     fileName: string,
     familleCode?: string | null,
+    destinationShopId?: string | null,
   ): Promise<ImportPlan> {
     assertCan(this.context, PERMISSIONS.importRun);
 
@@ -166,6 +180,7 @@ export class ImportService {
       sheetName: sheet.name,
       mapping,
       famille: famille?.code ?? null,
+      destinationShopId: destinationShopId ?? null,
     };
   }
 
@@ -185,6 +200,31 @@ export class ImportService {
       throw new BusinessError(
         `Champs obligatoires non associés : ${plan.report.missingFields.join(', ')}.`,
       );
+    }
+
+    /*
+     * Marchandise destinée à une AUTRE boutique.
+     *
+     * Elle entre d'abord ici, puis part en transfert : c'est le seul chemin qui
+     * laisse la destination VALIDER ce qu'elle reçoit. Écrire directement dans
+     * son stock ferait apparaître de la marchandise que personne sur place n'a
+     * confirmée — et c'est exactement là que naissent les écarts d'inventaire.
+     *
+     * Les droits sont vérifiés MAINTENANT, avant la première écriture : les
+     * découvrir après l'import laisserait le stock dans la boutique de
+     * l'importateur, sans transfert et sans que personne l'ait voulu.
+     */
+    const destination =
+      plan.destinationShopId && plan.destinationShopId !== this.context.shopId
+        ? plan.destinationShopId
+        : null;
+    if (destination) {
+      assertCan(this.context, PERMISSIONS.transferCreate);
+      assertCan(this.context, PERMISSIONS.transferApprove);
+      const boutique = await new ShopRepository(this.context.db).byId(destination);
+      if (!boutique || boutique.deletedAt) {
+        throw new BusinessError('Boutique de destination introuvable.');
+      }
     }
 
     const batchId = newId();
@@ -215,7 +255,11 @@ export class ImportService {
       unitsCreated: 0,
       categoriesCreated: 0,
       suppliersCreated: 0,
+      transfer: null,
     };
+    /** Ce qui partira en transfert, accumulé au fil des lignes appliquées. */
+    const aExpedier: TransferLineDraft[] = [];
+    const quantitesParProduit = new Map<string, { label: string; quantity: number }>();
     const productService = new ProductService(this.context);
     const stockService = new StockService(this.context);
     // Catégories et fournisseurs sont créés à la volée d'après le fichier :
@@ -280,8 +324,26 @@ export class ImportService {
             sourceLabel: plan.fileName,
           });
           result.unitsCreated += 1;
+          if (destination && unitId) {
+            aExpedier.push({
+              productId,
+              unitId,
+              label: row.product.name,
+              identifier: row.unit.imei1 ?? row.unit.serial ?? null,
+              quantity: 1,
+            });
+          }
           await this.logRow(batchId, row, 'CREATED', 'product_unit', unitId ?? null, null);
         } else if (row.quantity > 0 && row.product.tracking === 'QUANTITY') {
+          if (destination) {
+            // Les quantités se cumulent par produit : un fichier qui répète une
+            // référence sur dix lignes ne doit pas donner dix lignes de colis.
+            const connu = quantitesParProduit.get(productId);
+            quantitesParProduit.set(productId, {
+              label: connu?.label ?? row.product.name,
+              quantity: (connu?.quantity ?? 0) + row.quantity,
+            });
+          }
           await stockService.receiveQuantity({
             productId,
             quantity: row.quantity,
@@ -306,6 +368,13 @@ export class ImportService {
         const message = cause instanceof Error ? cause.message : String(cause);
         await this.logRow(batchId, row, 'ERROR', null, null, message);
       }
+    }
+
+    if (destination) {
+      for (const [productId, ligne] of quantitesParProduit) {
+        aExpedier.push({ productId, label: ligne.label, quantity: ligne.quantity });
+      }
+      result.transfer = await this.expedier(destination, aExpedier, plan);
     }
 
     await this.context.db.execute(
@@ -334,6 +403,36 @@ export class ImportService {
     });
 
     return result;
+  }
+
+  /**
+   * Envoie à sa boutique la marchandise qui lui était destinée.
+   *
+   * Le transfert est créé, approuvé et expédié d'un trait : la marchandise est
+   * déjà partie — elle est même souvent déjà arrivée. Ce qui reste à faire est
+   * ce qui compte, et cela n'appartient qu'à la destination : CONFIRMER ce
+   * qu'elle a reçu. Le service refuse déjà qu'une autre boutique le fasse à sa
+   * place.
+   *
+   * Un import qui n'aurait rien produit ne crée pas de colis vide.
+   */
+  private async expedier(
+    toShopId: string,
+    lines: TransferLineDraft[],
+    plan: ImportPlan,
+  ): Promise<ImportResult['transfer']> {
+    if (lines.length === 0) return null;
+
+    const transferts = new TransferService(this.context);
+    const { transferId, number } = await transferts.request({
+      toShopId,
+      lines,
+      note: `Import « ${plan.fileName} »`,
+    });
+    await transferts.approve(transferId);
+    await transferts.ship(transferId);
+
+    return { id: transferId, number, toShopId, lines: lines.length };
   }
 
   /**

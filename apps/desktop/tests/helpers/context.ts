@@ -16,7 +16,12 @@ import type { SqlExecutor } from '@/core/db/client';
 export async function contextFor(
   db: SqlExecutor,
   userId: string,
-  overrides: { permissions?: Permission[]; settings?: Partial<ShopSettings> } = {},
+  overrides: {
+    permissions?: Permission[];
+    settings?: Partial<ShopSettings>;
+    /** Boutique depuis laquelle on agit : sert aux épreuves de transfert. */
+    shopId?: string;
+  } = {},
 ): Promise<AppContext> {
   const session = await new UserRepository(db).sessionFor(userId);
   if (!session) throw new Error(`utilisateur ${userId} introuvable`);
@@ -26,7 +31,7 @@ export async function contextFor(
       ...session,
       permissions: overrides.permissions ?? [...ALL_PERMISSIONS],
     },
-    shopId: session.shopId,
+    shopId: overrides.shopId ?? session.shopId,
     shopCode: session.shopCode,
     settings: { ...DEFAULT_SETTINGS, ...overrides.settings },
   };

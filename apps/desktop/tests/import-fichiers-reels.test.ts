@@ -216,13 +216,17 @@ describe('fichiers Excel réels du client', () => {
       expect(fournisseurs.some((element) => element.code === 'SHAP')).toBe(true);
     });
 
-    it("reprend l'emplacement de stockage dans les caractéristiques", async () => {
+    it("ne range plus l'emplacement dans les caractéristiques du produit", async () => {
+      // « DPKNG/Stock » désigne une BOUTIQUE, pas une propriété de l'article.
+      // Le ranger dans les attributs donnait à un même modèle un emplacement
+      // unique, forcément faux dès qu'il était présent dans deux boutiques.
       const feuille = readSheet(charger('Housses.xlsx'), 'Housses');
       await service.apply(
         await service.plan(feuille, suggestMapping(feuille.headers), 'CREATE_ONLY', 'Housses.xlsx'),
       );
       const produit = await new ProductRepository(fixture.db).bySku('HOU-IP17PM-SIL');
-      expect(produit?.attributes['emplacement']).toBe('DPKNG/Stock');
+      expect(produit).not.toBeNull();
+      expect(produit?.attributes['emplacement']).toBeUndefined();
     });
 
     it('entre bien les quantités en stock', async () => {
