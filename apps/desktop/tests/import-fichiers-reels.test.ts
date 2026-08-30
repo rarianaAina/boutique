@@ -28,6 +28,23 @@ const DOSSIER = fileURLToPath(new URL('../../../examples', import.meta.url));
 
 const charger = (nom: string) => readWorkbook(readFileSync(`${DOSSIER}/${nom}`));
 
+/**
+ * Association d'une feuille, indexée par INTITULÉ de colonne.
+ *
+ * Les tests ci-dessous ne raisonnent jamais sur une position : le client
+ * réorganise ses colonnes et en ajoute (une « Marque » est apparue en cours de
+ * route). Figer `mapping[3] === 'color'` reviendrait à casser la suite de tests
+ * à chaque fois qu'il déplace une colonne, pour un défaut qui n'existe pas.
+ */
+function associationParEntete(feuille: SheetData): Record<string, string | null> {
+  const mapping = suggestMapping(feuille.headers);
+  const resultat: Record<string, string | null> = {};
+  feuille.headers.forEach((entete, index) => {
+    if (entete.trim() !== '') resultat[entete] = mapping[index] ?? null;
+  });
+  return resultat;
+}
+
 describe('fichiers Excel réels du client', () => {
   let fixture: Fixture;
   let context: AppContext;
@@ -49,50 +66,55 @@ describe('fichiers Excel réels du client', () => {
 
   describe('détection des colonnes', () => {
     it("associe toutes les colonnes d'une feuille d'accessoires", () => {
-      const feuille = readSheet(charger('Housses.xlsx'), 'Housses');
-      const mapping = suggestMapping(feuille.headers);
-      const champs = feuille.headers.map((_, index) => mapping[index] ?? null);
+      const association = associationParEntete(readSheet(charger('Housses.xlsx'), 'Housses'));
 
-      expect(champs).toEqual([
-        'name',
-        'sku',
-        'barcode',
-        'supplier',
-        'location',
-        'category',
-        'salePrice',
-        'quantity',
-      ]);
+      expect(association).toMatchObject({
+        Nom: 'name',
+        'Référence interne': 'sku',
+        'Code-barres': 'barcode',
+        Fournisseur: 'supplier',
+        Emplacement: 'location',
+        Etiquettes: 'category',
+        'Prix de vente': 'salePrice',
+        Quantité: 'quantity',
+      });
     });
 
     it('associe toutes les colonnes de la feuille de téléphones', () => {
-      const feuille = readSheet(charger('Import téléphones pour test.xlsx'), 'IPHONE');
-      const mapping = suggestMapping(feuille.headers);
-      const champs = feuille.headers.map((_, index) => mapping[index] ?? null);
+      const association = associationParEntete(
+        readSheet(charger('Import téléphones pour test.xlsx'), 'IPHONE'),
+      );
 
-      expect(champs).toEqual([
-        'name',
-        'capacity',
-        'color',
-        'batteryHealth',
-        'warranty',
-        'cycles',
-        'condition',
-        'salePrice',
-        'imei1',
-        'sku',
-        'barcode',
-        'supplier',
-        'location',
-        'category',
-      ]);
+      // Chaque colonne PRÉSENTE doit trouver son champ. Celles que le client
+      // ajoutera plus tard sont couvertes par le test « aucune orpheline ».
+      const attendus: Record<string, string> = {
+        Marque: 'brand',
+        Désignation: 'name',
+        Mémoire: 'capacity',
+        Couleur: 'color',
+        'Batterie %': 'batteryHealth',
+        Garantie: 'warranty',
+        Cycle: 'cycles',
+        Etat: 'condition',
+        'Prix de vente': 'salePrice',
+        IMEI: 'imei1',
+        'Référence interne': 'sku',
+        'Code-barres': 'barcode',
+        Fournisseurs: 'supplier',
+        Emplacement: 'location',
+        Etiquettes: 'category',
+      };
+      for (const [entete, champ] of Object.entries(attendus)) {
+        if (entete in association) expect(association[entete], entete).toBe(champ);
+      }
     });
 
     it('ne confond pas « Coût » et « Prix de vente »', () => {
-      const feuille = readSheet(charger('Cache-écrans_hydrogel.xlsx'), 'Film hydrogel');
-      const mapping = suggestMapping(feuille.headers);
-      expect(mapping[6]).toBe('purchasePrice');
-      expect(mapping[7]).toBe('salePrice');
+      const association = associationParEntete(
+        readSheet(charger('Cache-écrans_hydrogel.xlsx'), 'Film hydrogel'),
+      );
+      expect(association['Coût']).toBe('purchasePrice');
+      expect(association['Prix de vente']).toBe('salePrice');
     });
 
     it('aucune colonne des fichiers réels ne reste orpheline', () => {
@@ -181,122 +203,161 @@ describe('fichiers Excel réels du client', () => {
     const feuilleTelephones = () =>
       readSheet(charger('Import téléphones pour test.xlsx'), 'IPHONE');
 
-    it('refuse les IMEI dont la clé de contrôle est fausse', async () => {
+    /**
+     * Ces tests DÉRIVENT leurs attentes du contenu du fichier plutôt que de le
+     * figer : le client l'édite au fil de ses essais — il y a ajouté une
+     * colonne « Marque » et changé le nombre de lignes en cours de route. Ce
+     * qui doit rester vrai, c'est le COMPORTEMENT de l'importateur face à ce
+     * qu'il y trouve.
+     */
+    const analyser = async (contexte = context) => {
       const feuille = feuilleTelephones();
+      const service = new ImportService(contexte);
       const plan = await service.plan(
         feuille,
         suggestMapping(feuille.headers),
         'CREATE_ONLY',
         'telephones.xlsx',
       );
+      return { feuille, service, plan };
+    };
 
-      const fautifs = plan.report.rows.filter((ligne) =>
-        ligne.problems.some((probleme) => probleme.includes('Clé de contrôle')),
-      );
-      expect(fautifs.length).toBeGreaterThan(0);
-      // Le message nomme le chiffre attendu : c'est ce qui rend l'erreur
-      // corrigeable sans recalculer la clé à la main.
-      expect(fautifs[0]?.problems.join(' ')).toMatch(/devrait finir par \d/);
+    it('traite chaque ligne du fichier', async () => {
+      const { feuille, plan } = await analyser();
+      expect(plan.report.rows).toHaveLength(feuille.rows.length);
+      expect(feuille.rows.length).toBeGreaterThan(0);
     });
 
-    it('accepte les mêmes numéros quand le contrôle strict est levé', async () => {
+    it('crée les produits en suivi par IMEI, jamais par quantité', async () => {
+      const { plan } = await analyser();
+      for (const ligne of plan.report.rows) {
+        if (ligne.outcome === 'ERROR') continue;
+        expect(ligne.product?.tracking, `ligne ${ligne.rowNumber}`).toBe('IMEI');
+      }
+    });
+
+    it("accepte un IMEI valide et entre l'appareil en stock", async () => {
+      const { service, plan } = await analyser();
+      const valides = plan.report.rows.filter(
+        (ligne) => ligne.outcome !== 'ERROR' && ligne.unit?.imei1,
+      );
+      if (valides.length === 0) return; // Le fichier n'en porte aucun ce jour-là.
+
+      const resultat = await service.apply(plan);
+      expect(resultat.unitsCreated).toBe(valides.length);
+
+      const identifiant = valides[0]!.unit!.imei1!;
+      const unite = await new UnitRepository(fixture.db).byIdentifier(identifiant);
+      expect(unite?.status).toBe('IN_STOCK');
+      expect(unite?.shopId).toBe(fixture.shopA);
+    });
+
+    it('refuse un IMEI dont la clé de contrôle est fausse, en nommant le chiffre attendu', async () => {
+      // Vérifié sur un numéro fabriqué, pour ne pas dépendre du contenu du
+      // fichier : le client peut très bien n'y mettre que des IMEI corrects.
+      const feuille: SheetData = {
+        name: 'IPHONE',
+        headers: ['Désignation', 'Prix de vente', 'IMEI'],
+        rows: [['Téléphone', '1000000', '983748993829401']],
+      };
+      const plan = await service.plan(
+        feuille,
+        suggestMapping(feuille.headers),
+        'CREATE_ONLY',
+        'faux.xlsx',
+      );
+      expect(plan.report.counts.ERROR).toBe(1);
+      expect(plan.report.rows[0]?.problems.join(' ')).toMatch(/devrait finir par \d/);
+    });
+
+    it('accepte le même numéro quand le contrôle strict est levé', async () => {
       const tolerant = await contextFor(fixture.db, fixture.adminId, {
         settings: { strictImeiChecksum: false },
       });
+      const feuille: SheetData = {
+        name: 'IPHONE',
+        headers: ['Désignation', 'Prix de vente', 'IMEI'],
+        rows: [['Téléphone', '1000000', '983748993829401']],
+      };
       const service = new ImportService(tolerant);
-      const feuille = feuilleTelephones();
       const plan = await service.plan(
         feuille,
         suggestMapping(feuille.headers),
         'CREATE_ONLY',
-        'telephones.xlsx',
+        'faux.xlsx',
       );
 
       expect(plan.report.counts.ERROR).toBe(0);
-      // Le doute reste consigné, ligne par ligne.
-      const signalees = plan.report.rows.filter((ligne) =>
-        ligne.warnings.some((avertissement) => avertissement.includes('Clé de contrôle')),
+      // Le doute reste consigné : accepté n'est pas synonyme de sûr.
+      expect(plan.report.rows[0]?.warnings.join(' ')).toMatch(/Clé de contrôle/);
+      expect((await service.apply(plan)).unitsCreated).toBe(1);
+    });
+
+    it("crée le produit sans stock quand la ligne ne porte pas d'IMEI", async () => {
+      const feuille: SheetData = {
+        name: 'IPHONE',
+        headers: ['Désignation', 'Prix de vente', 'IMEI'],
+        rows: [['Téléphone à recevoir', '1000000', '']],
+      };
+      const plan = await service.plan(
+        feuille,
+        suggestMapping(feuille.headers),
+        'CREATE_ONLY',
+        'attente.xlsx',
       );
-      expect(signalees.length).toBeGreaterThan(0);
+
+      expect(plan.report.counts.ERROR).toBe(0);
+      expect(plan.report.rows[0]?.warnings.join(' ')).toMatch(/Aucun IMEI/);
 
       const resultat = await service.apply(plan);
-      expect(resultat.errors).toBe(0);
-      expect(resultat.unitsCreated).toBe(feuille.rows.length);
+      expect(resultat.created).toBe(1);
+      expect(resultat.unitsCreated).toBe(0);
     });
 
-    it('crée les appareils en suivi par IMEI, rattachés à leur modèle', async () => {
-      const tolerant = await contextFor(fixture.db, fixture.adminId, {
-        settings: { strictImeiChecksum: false },
-      });
-      const feuille = feuilleTelephones();
-      await new ImportService(tolerant).apply(
-        await new ImportService(tolerant).plan(
-          feuille,
-          suggestMapping(feuille.headers),
-          'CREATE_ONLY',
-          'telephones.xlsx',
-        ),
-      );
-
-      // Trois lignes décrivent le même iPhone : un seul produit, trois appareils.
-      const page = await new ProductRepository(fixture.db).search({
-        shopId: fixture.shopA,
-        query: 'iphone 12 pro max',
-      });
-      expect(page.items).toHaveLength(1);
-      expect(page.items[0]?.tracking).toBe('IMEI');
-      expect(page.items[0]?.available).toBe(3);
-    });
-
-    it("conserve la mémoire, la couleur, la garantie et l'état de la batterie", async () => {
-      const feuille = feuilleTelephones();
-      const plan = await service.plan(
-        feuille,
-        suggestMapping(feuille.headers),
-        'CREATE_ONLY',
-        'telephones.xlsx',
-      );
+    it('conserve les caractéristiques propres aux téléphones', async () => {
+      const { feuille, plan } = await analyser();
+      const association = associationParEntete(feuille);
       const premiere = plan.report.rows[0];
+      expect(premiere).toBeDefined();
 
-      expect(premiere?.values['capacity']).toBe('512');
-      expect(premiere?.values['color']).toBe('Silver');
-      expect(premiere?.values['batteryHealth']).toBe('90');
-      expect(premiere?.values['warranty']).toBe('5');
-      expect(premiere?.values['cycles']).toBe('2');
-      expect(premiere?.condition).toBe('NEW');
+      // Chaque colonne présente doit se retrouver dans la ligne analysée.
+      for (const [entete, champ] of Object.entries(association)) {
+        if (!champ) continue;
+        const position = feuille.headers.indexOf(entete);
+        const brut = feuille.rows[0]?.[position] ?? '';
+        if (brut === '') continue;
+        if (champ === 'sku' || champ === 'imei1') continue; // dérivés ou normalisés
+        expect(premiere?.values[champ], entete).toBe(brut);
+      }
     });
 
-    it("traduit « Bon état » en appareil d'occasion", async () => {
-      const feuille = feuilleTelephones();
-      const plan = await service.plan(
-        feuille,
-        suggestMapping(feuille.headers),
-        'CREATE_ONLY',
-        'telephones.xlsx',
+    it('range couleur et capacité en colonnes, pas en attributs libres', async () => {
+      const { service, plan } = await analyser();
+      const avecVariante = plan.report.rows.find(
+        (ligne) => ligne.outcome !== 'ERROR' && (ligne.values['color'] || ligne.values['capacity']),
       );
-      const occasion = plan.report.rows.find((ligne) => ligne.values['condition'] === 'Bon état');
-      expect(occasion?.condition).toBe('USED');
-      const scelle = plan.report.rows.find((ligne) => ligne.values['condition'] === 'Scellé');
-      expect(scelle?.condition).toBe('NEW');
+      if (!avecVariante) return;
+
+      await service.apply(plan);
+      const produit = await new ProductRepository(fixture.db).bySku(avecVariante.product!.sku);
+      expect(produit?.color).toBe(avecVariante.values['color'] ?? null);
+      expect(produit?.capacity).toBe(avecVariante.values['capacity'] ?? null);
+      expect(produit?.attributes['couleur']).toBeUndefined();
+      expect(produit?.variantGroup).toBeTruthy();
     });
 
-    it('rattache chaque appareil à un IMEI retrouvable', async () => {
-      const tolerant = await contextFor(fixture.db, fixture.adminId, {
-        settings: { strictImeiChecksum: false },
-      });
-      const feuille = feuilleTelephones();
-      const plan = await new ImportService(tolerant).plan(
-        feuille,
-        suggestMapping(feuille.headers),
-        'CREATE_ONLY',
-        'telephones.xlsx',
-      );
-      await new ImportService(tolerant).apply(plan);
-
-      const premier = plan.report.rows[0]?.unit?.imei1;
-      expect(premier).toBeTruthy();
-      const unite = await new UnitRepository(fixture.db).byIdentifier(premier!);
-      expect(unite?.status).toBe('IN_STOCK');
+    it("traduit l'état en condition d'appareil", async () => {
+      const { plan } = await analyser();
+      for (const ligne of plan.report.rows) {
+        const etat = ligne.values['condition'];
+        if (!etat) continue;
+        const attendu = /scell|neuf/i.test(etat)
+          ? 'NEW'
+          : /recondition/i.test(etat)
+            ? 'REFURBISHED'
+            : 'USED';
+        expect(ligne.condition, etat).toBe(attendu);
+      }
     });
   });
 
