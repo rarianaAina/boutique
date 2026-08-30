@@ -24,10 +24,14 @@ export interface Famille {
   label: string;
   tracking: Tracking;
   /**
-   * Attribut qui distingue les articles à l'intérieur de la famille, présenté
-   * comme un second écran au comptoir (« Verre » ou « Hydrogel »).
+   * Ordre dans lequel on descend le rayon au comptoir.
+   *
+   * Il diffère d'une famille à l'autre parce que la première question posée
+   * diffère : pour un smartphone c'est la marque, pour un cache-écran c'est le
+   * type (« verre ou hydrogel ? »). Les critères non cités restent disponibles
+   * à la suite, dans l'ordre par défaut.
    */
-  facette?: string;
+  axes?: string[];
   /** Mots reconnus dans le nom du fichier ou de la feuille. */
   indices: string[];
 }
@@ -37,48 +41,49 @@ export const FAMILLES: Famille[] = [
     code: 'smartphones',
     label: 'Smartphones',
     tracking: TRACKING.imei,
-    facette: 'capacite',
+    axes: ['marque', 'capacite', 'couleur'],
     indices: ['telephone', 'phone', 'iphone', 'smartphone', 'samsung', 'mobile'],
   },
   {
     code: 'montres',
     label: 'Montres connectées',
     tracking: TRACKING.quantity,
+    axes: ['marque', 'couleur'],
     indices: ['montre', 'watch'],
   },
   {
     code: 'boitiers',
     label: 'Boîtiers de charge',
     tracking: TRACKING.quantity,
-    facette: 'puissance',
+    axes: ['marque', 'puissance', 'couleur'],
     indices: ['boitier', 'chargeur', 'adaptateur'],
   },
   {
     code: 'cables',
     label: 'Câbles',
     tracking: TRACKING.quantity,
-    facette: 'avec_boitier',
+    axes: ['marque', 'avec_boitier', 'couleur'],
     indices: ['cable'],
   },
   {
     code: 'powerbank',
     label: 'Powerbanks',
     tracking: TRACKING.quantity,
-    facette: 'puissance',
+    axes: ['marque', 'puissance', 'avec_cable'],
     indices: ['powerbank', 'batterie externe'],
   },
   {
     code: 'cache-ecrans',
     label: 'Cache-écrans',
     tracking: TRACKING.quantity,
-    facette: 'type',
+    axes: ['type', 'compatibilite', 'marque'],
     indices: ['cache ecran', 'cache-ecran', 'verre', 'hydrogel', 'protection'],
   },
   {
     code: 'housses',
     label: 'Housses',
     tracking: TRACKING.quantity,
-    facette: 'couleur',
+    axes: ['marque', 'compatibilite', 'couleur'],
     indices: ['housse', 'coque', 'etui'],
   },
   {

@@ -1,4 +1,5 @@
 import type { ProductWithStock } from '@/core/db/repositories/product.repository';
+import { devinerFamille } from '@/core/import/familles';
 
 /**
  * Descente par critères dans le catalogue, pour le comptoir (§7).
@@ -17,25 +18,50 @@ export interface Axe {
   label: string;
   /** Colonne du produit à lire en priorité, avant les caractéristiques libres. */
   depuisColonne?: 'color' | 'capacity' | 'brand';
+  /**
+   * L'attribut porte PLUSIEURS valeurs, séparées par des virgules.
+   *
+   * C'est le cas de la compatibilité : un même verre trempé s'adapte à
+   * plusieurs téléphones, et doit apparaître sous chacun d'eux.
+   */
+  multiple?: boolean;
 }
 
 /**
- * Critères de descente, du plus discriminant au plus accessoire.
+ * Tous les critères connus, dans leur ordre par défaut.
  *
- * L'ordre EST le parcours : le type d'abord, parce que c'est la première
- * question posée au comptoir (« verre ou hydrogel ? ») ; la marque ensuite,
- * parce que dans les fichiers d'accessoires elle porte l'appareil visé
- * (« Iphone 12 Pro Max ») ; les déclinaisons en dernier.
+ * Cet ordre ne convient pas à toutes les familles — un smartphone se choisit
+ * par marque, un cache-écran par type — d'où `axesPour`, qui le réordonne selon
+ * le rayon ouvert.
  */
 export const AXES: Axe[] = [
   { cle: 'type', label: 'Type' },
   { cle: 'marque', label: 'Marque', depuisColonne: 'brand' },
+  { cle: 'compatibilite', label: 'Compatible avec', multiple: true },
   { cle: 'puissance', label: 'Puissance' },
   { cle: 'avec_boitier', label: 'Avec boîtier' },
   { cle: 'avec_cable', label: 'Avec câble' },
   { cle: 'capacite', label: 'Mémoire', depuisColonne: 'capacity' },
   { cle: 'couleur', label: 'Couleur', depuisColonne: 'color' },
 ];
+
+const AXE_PAR_CLE = new Map(AXES.map((axe) => [axe.cle, axe]));
+
+/**
+ * Ordre des critères pour un rayon donné.
+ *
+ * Chaque famille se choisit dans un ordre qui lui est propre : un smartphone
+ * par marque d'abord, un cache-écran par type d'abord. La famille déclare le
+ * sien ; les critères qu'elle ne cite pas restent disponibles à la suite,
+ * dans l'ordre par défaut, plutôt que d'être perdus.
+ */
+export function axesPour(categorie: string | null | undefined): Axe[] {
+  const declares = devinerFamille(categorie ?? '')?.axes ?? [];
+  const ordonnes = declares
+    .map((cle) => AXE_PAR_CLE.get(cle))
+    .filter((axe): axe is Axe => axe !== undefined);
+  return [...ordonnes, ...AXES.filter((axe) => !ordonnes.includes(axe))];
+}
 
 /**
  * Valeur sentinelle des articles qui ne portent pas le critère.
@@ -45,12 +71,25 @@ export const AXES: Axe[] = [
  */
 export const SANS_VALEUR = ' sans';
 
-export function valeurDe(produit: ProductWithStock, axe: Axe): string {
+/** Valeurs qu'un article porte pour un critère — plusieurs si l'axe le permet. */
+export function valeursDuProduit(produit: ProductWithStock, axe: Axe): string[] {
   if (axe.depuisColonne) {
     const colonne = produit[axe.depuisColonne];
-    if (colonne) return colonne.trim();
+    if (colonne?.trim()) return [colonne.trim()];
   }
-  return produit.attributes[axe.cle]?.trim() || SANS_VALEUR;
+  const brut = produit.attributes[axe.cle]?.trim();
+  if (!brut) return [SANS_VALEUR];
+  if (!axe.multiple) return [brut];
+  const parts = brut
+    .split(',')
+    .map((valeur) => valeur.trim())
+    .filter((valeur) => valeur !== '');
+  return parts.length > 0 ? parts : [SANS_VALEUR];
+}
+
+/** Vrai si l'article répond au choix fait sur ce critère. */
+export function correspond(produit: ProductWithStock, axe: Axe, valeur: string): boolean {
+  return valeursDuProduit(produit, axe).includes(valeur);
 }
 
 /**
@@ -58,19 +97,25 @@ export function valeurDe(produit: ProductWithStock, axe: Axe): string {
  *
  * « Réellement » est le mot important : un axe dont tous les articles portent
  * la même valeur n'ajouterait qu'un écran à traverser, avec une seule tuile à
- * cliquer. On passe au suivant.
+ * cliquer. On passe au suivant. Et un lot d'un seul article ne se découpe
+ * plus : on le montre.
  */
-export function axeSeparant(produits: ProductWithStock[], utilises: string[]): Axe | null {
-  for (const axe of AXES) {
+export function axeSeparant(
+  produits: ProductWithStock[],
+  utilises: string[],
+  axes: Axe[] = AXES,
+): Axe | null {
+  if (produits.length < 2) return null;
+  for (const axe of axes) {
     if (utilises.includes(axe.cle)) continue;
-    const valeurs = new Set(produits.map((produit) => valeurDe(produit, axe)));
+    const valeurs = new Set(produits.flatMap((produit) => valeursDuProduit(produit, axe)));
     if (valeurs.size > 1) return axe;
   }
   return null;
 }
 
 export function valeursDe(produits: ProductWithStock[], axe: Axe): string[] {
-  const valeurs = [...new Set(produits.map((produit) => valeurDe(produit, axe)))];
+  const valeurs = [...new Set(produits.flatMap((produit) => valeursDuProduit(produit, axe)))];
   // Les articles sans valeur ferment la marche : ce sont les exceptions.
   valeurs.sort((a, b) =>
     a === SANS_VALEUR ? 1 : b === SANS_VALEUR ? -1 : a.localeCompare(b, 'fr'),
@@ -91,7 +136,7 @@ export interface Etape {
 export function filtrer(produits: ProductWithStock[], etapes: Etape[]): ProductWithStock[] {
   let lot = produits;
   for (const etape of etapes) {
-    lot = lot.filter((produit) => valeurDe(produit, etape.axe) === etape.valeur);
+    lot = lot.filter((produit) => correspond(produit, etape.axe, etape.valeur));
   }
   return lot;
 }

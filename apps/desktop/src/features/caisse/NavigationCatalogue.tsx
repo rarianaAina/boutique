@@ -13,9 +13,10 @@ import { Bouton } from '@/components/ui/Bouton';
 import { Chargement, Vide } from '@/components/ui/Page';
 import {
   axeSeparant,
+  axesPour,
   filtrer,
   libelleValeur,
-  valeurDe,
+  correspond,
   valeursDe,
   type Etape,
 } from '@/core/catalogue/facettes';
@@ -81,6 +82,10 @@ export function NavigationCatalogue({
     [produits.donnees, etapes],
   );
 
+  // L'ordre de descente dépend du rayon ouvert : un smartphone se choisit par
+  // marque, un cache-écran par type.
+  const axes = useMemo(() => axesPour(categorie?.nom), [categorie?.nom]);
+
   const suivant = useMemo(
     () =>
       toutVoir
@@ -88,8 +93,9 @@ export function NavigationCatalogue({
         : axeSeparant(
             restants,
             etapes.map((etape) => etape.axe.cle),
+            axes,
           ),
-    [restants, etapes, toutVoir],
+    [restants, etapes, toutVoir, axes],
   );
 
   /* ─── Fil d'Ariane ──────────────────────────────────────────────────────
@@ -175,7 +181,7 @@ export function NavigationCatalogue({
                   key={valeur}
                   titre={libelleValeur(valeur, suivant)}
                   detail={compter(
-                    restants.filter((produit) => valeurDe(produit, suivant) === valeur).length,
+                    restants.filter((produit) => correspond(produit, suivant, valeur)).length,
                   )}
                   onClick={() => setEtapes([...etapes, { axe: suivant, valeur }])}
                 />
