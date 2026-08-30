@@ -9,7 +9,9 @@ import { ProductRepository } from '@/core/db/repositories/product.repository';
 import { CategoryRepository } from '@/core/db/repositories/category.repository';
 import {
   axeSeparant,
+  axesDeclares,
   axesPour,
+  chercher,
   filtrer,
   valeursDe,
   valeursDuProduit,
@@ -422,6 +424,10 @@ describe('critères de descente', () => {
   const article = (valeurs: Partial<Record<string, string>>, attributs: Record<string, string>) =>
     ({
       id: Math.random().toString(36),
+      name: valeurs['name'] ?? '',
+      sku: valeurs['sku'] ?? '',
+      model: null,
+      barcode: null,
       brand: valeurs['brand'] ?? null,
       color: valeurs['color'] ?? null,
       capacity: valeurs['capacity'] ?? null,
@@ -480,6 +486,60 @@ describe('critères de descente', () => {
       expect(valeursDe(lot, axe)).toEqual(['Iphone 12 Pro Max', 'Samsung S23 Ultra']);
       expect(filtrer(lot, [{ axe, valeur: 'Iphone 12 Pro Max' }])).toHaveLength(2);
       expect(filtrer(lot, [{ axe, valeur: 'Samsung S23 Ultra' }])).toEqual([verre]);
+    });
+  });
+
+  describe('étapes revendiquées par un rayon', () => {
+    it('présente la marque des smartphones même si tous partagent la même', () => {
+      // Le chemin d'un rayon est une habitude de comptoir : il ne doit pas
+      // changer de forme selon le stock du jour. Un écran d'une seule tuile
+      // vaut mieux qu'une étape qui apparaît et disparaît.
+      const lot = [
+        article({ brand: 'Apple', capacity: '128' }, {}),
+        article({ brand: 'Apple', capacity: '256' }, {}),
+      ];
+      const axe = axeSeparant(lot, [], axesPour('Smartphones'), axesDeclares('Smartphones'));
+      expect(axe?.cle).toBe('marque');
+      expect(valeursDe(lot, axe!)).toEqual(['Apple']);
+
+      // Puis la mémoire, comme le rayon le déclare.
+      const suite = axeSeparant(
+        lot,
+        ['marque'],
+        axesPour('Smartphones'),
+        axesDeclares('Smartphones'),
+      );
+      expect(suite?.cle).toBe('capacite');
+    });
+
+    it('saute un critère non revendiqué que tous les articles partagent', () => {
+      const lot = [
+        article({ brand: 'Apple', color: 'Noir' }, { type: 'Verre' }),
+        article({ brand: 'Apple', color: 'Blanc' }, { type: 'Verre' }),
+      ];
+      // Aucun rayon reconnu : le type ne sépare pas, la couleur oui.
+      expect(axeSeparant(lot, [], axesPour('Divers'))?.cle).toBe('couleur');
+    });
+  });
+
+  describe('recherche dans le chemin ouvert', () => {
+    const lot = [
+      article({ brand: 'Samsung' }, { type: 'Hydrogel' }),
+      article({ brand: 'Apple' }, { type: 'Verre' }),
+    ];
+
+    it('retient les articles dont un champ porte tous les mots', () => {
+      expect(chercher(lot, 'hydrogel')).toEqual([lot[0]]);
+      expect(chercher(lot, 'samsung hydrogel')).toEqual([lot[0]]);
+      expect(chercher(lot, 'apple hydrogel')).toEqual([]);
+    });
+
+    it('ignore accents et casse', () => {
+      expect(chercher([article({ brand: 'Écouteurs' }, {})], 'ecouteur')).toHaveLength(1);
+    });
+
+    it('rend le lot entier quand rien n’est saisi', () => {
+      expect(chercher(lot, '   ')).toEqual(lot);
     });
   });
 
