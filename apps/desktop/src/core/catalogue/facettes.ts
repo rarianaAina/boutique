@@ -1,3 +1,4 @@
+import { buildSearchKey, searchTerms } from '@boutique/shared';
 import type { ProductWithStock } from '@/core/db/repositories/product.repository';
 import { devinerFamille } from '@/core/import/familles';
 
@@ -56,11 +57,23 @@ const AXE_PAR_CLE = new Map(AXES.map((axe) => [axe.cle, axe]));
  * dans l'ordre par défaut, plutôt que d'être perdus.
  */
 export function axesPour(categorie: string | null | undefined): Axe[] {
-  const declares = devinerFamille(categorie ?? '')?.axes ?? [];
-  const ordonnes = declares
+  const ordonnes = axesDeclares(categorie);
+  return [...ordonnes, ...AXES.filter((axe) => !ordonnes.includes(axe))];
+}
+
+/**
+ * Critères que la famille revendique explicitement.
+ *
+ * Ils sont TOUJOURS présentés, même quand tous les articles partagent la même
+ * valeur : le chemin d'un rayon est une habitude de comptoir, et il vaut mieux
+ * un écran d'une seule tuile qu'un parcours qui change de forme selon le stock
+ * du jour. Les autres critères, eux, ne s'affichent que s'ils séparent
+ * vraiment.
+ */
+export function axesDeclares(categorie: string | null | undefined): Axe[] {
+  return (devinerFamille(categorie ?? '')?.axes ?? [])
     .map((cle) => AXE_PAR_CLE.get(cle))
     .filter((axe): axe is Axe => axe !== undefined);
-  return [...ordonnes, ...AXES.filter((axe) => !ordonnes.includes(axe))];
 }
 
 /**
@@ -104,14 +117,44 @@ export function axeSeparant(
   produits: ProductWithStock[],
   utilises: string[],
   axes: Axe[] = AXES,
+  imposes: Axe[] = [],
 ): Axe | null {
+  // Un article unique se montre, jamais ne se découpe : même le chemin
+  // revendiqué par le rayon n'a plus rien à trancher.
   if (produits.length < 2) return null;
   for (const axe of axes) {
     if (utilises.includes(axe.cle)) continue;
+    if (imposes.includes(axe)) return axe;
     const valeurs = new Set(produits.flatMap((produit) => valeursDuProduit(produit, axe)));
     if (valeurs.size > 1) return axe;
   }
   return null;
+}
+
+/**
+ * Filtre un lot sur une saisie libre.
+ *
+ * La recherche du comptoir porte sur le CHEMIN OUVERT : une fois dans les
+ * cache-écrans, taper « hydrogel » ne doit pas ramener des housses. Elle
+ * reprend la normalisation du reste de l'application — sans accent, mot à mot,
+ * et tous les mots doivent être présents.
+ */
+export function chercher(produits: ProductWithStock[], saisie: string): ProductWithStock[] {
+  const termes = searchTerms(saisie);
+  if (termes.length === 0) return produits;
+  return produits.filter((produit) => {
+    const cle = buildSearchKey(
+      produit.name,
+      produit.sku,
+      produit.brand,
+      produit.model,
+      produit.barcode,
+      produit.color,
+      produit.capacity,
+      ...Object.values(produit.attributes),
+    );
+    return termes.every((terme) => cle.includes(terme));
+  });
 }
 
 export function valeursDe(produits: ProductWithStock[], axe: Axe): string[] {

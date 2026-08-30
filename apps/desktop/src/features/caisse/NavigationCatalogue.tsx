@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { variantLabel } from '@boutique/shared';
 import {
   ProductRepository,
@@ -13,7 +13,9 @@ import { Bouton } from '@/components/ui/Bouton';
 import { Chargement, Vide } from '@/components/ui/Page';
 import {
   axeSeparant,
+  axesDeclares,
   axesPour,
+  chercher,
   filtrer,
   libelleValeur,
   correspond,
@@ -28,16 +30,27 @@ import {
  * « un hydrogel pour un S23 ». Le champ de recherche sert au scan et aux
  * articles qu'on sait nommer ; ce navigateur sert à tout le reste.
  *
- * Le parcours n'est pas figé à deux niveaux : on affiche les catégories, puis
- * on descend tant qu'un critère SÉPARE encore les articles restants — le type,
- * puis la puissance, puis la couleur. Une catégorie de deux articles s'ouvre
- * donc directement sur ses deux articles, sans écran intermédiaire inutile.
+ * Le parcours n'est pas figé à deux niveaux : chaque rayon déclare ses étapes
+ * — marque puis mémoire pour un smartphone, type puis compatibilité pour un
+ * cache-écran — et l'on descend ensuite tant qu'un critère sépare encore les
+ * articles restants.
+ *
+ * Une fois un rayon ouvert, la recherche PORTE SUR CE RAYON : dans les
+ * cache-écrans, taper « hydrogel » ne doit pas ramener des housses. Le scan
+ * d'un IMEI, lui, reste global — un appareil qu'on scanne se vend d'où qu'il
+ * vienne.
  */
 
 export function NavigationCatalogue({
   onChoisir,
+  recherche = '',
+  onChemin,
 }: {
   onChoisir: (produit: ProductWithStock) => void;
+  /** Saisie du champ de recherche, appliquée au chemin ouvert. */
+  recherche?: string;
+  /** Prévient l'écran qu'un rayon est ouvert, pour qu'il lui laisse la recherche. */
+  onChemin?: (ouvert: boolean) => void;
 }) {
   const { db, shopId } = useSession();
   const [categorie, setCategorie] = useState<{ id: string; nom: string } | null>(null);
@@ -50,6 +63,10 @@ export function NavigationCatalogue({
     setEtapes([]);
     setToutVoir(false);
   };
+
+  useEffect(() => {
+    onChemin?.(categorie !== null);
+  }, [categorie, onChemin]);
 
   const categories = useChargement(async () => {
     if (!db) return [];
@@ -82,20 +99,28 @@ export function NavigationCatalogue({
     [produits.donnees, etapes],
   );
 
+  // La recherche s'applique au chemin ouvert, et coupe court à la descente :
+  // qui tape le nom d'un article veut l'article, pas trois écrans de choix.
+  const saisie = recherche.trim();
+  const trouves = useMemo(() => chercher(restants, saisie), [restants, saisie]);
+
   // L'ordre de descente dépend du rayon ouvert : un smartphone se choisit par
-  // marque, un cache-écran par type.
+  // marque, un cache-écran par type. Les étapes que le rayon revendique sont
+  // toujours présentées, même si tous les articles y portent la même valeur.
   const axes = useMemo(() => axesPour(categorie?.nom), [categorie?.nom]);
+  const imposes = useMemo(() => axesDeclares(categorie?.nom), [categorie?.nom]);
 
   const suivant = useMemo(
     () =>
-      toutVoir
+      toutVoir || saisie !== ''
         ? null
         : axeSeparant(
             restants,
             etapes.map((etape) => etape.axe.cle),
             axes,
+            imposes,
           ),
-    [restants, etapes, toutVoir, axes],
+    [restants, etapes, toutVoir, axes, imposes, saisie],
   );
 
   /* ─── Fil d'Ariane ──────────────────────────────────────────────────────
@@ -193,14 +218,38 @@ export function NavigationCatalogue({
               </Bouton>
             </div>
           </>
-        ) : restants.length === 0 ? (
-          <Vide icone="boite" titre="Rien à cet endroit du catalogue" />
+        ) : trouves.length === 0 ? (
+          <Vide
+            icone="boite"
+            titre={saisie === '' ? 'Rien à cet endroit du catalogue' : 'Aucun article ici'}
+            detail={
+              saisie === ''
+                ? undefined
+                : `« ${saisie} » ne correspond à rien dans ce rayon. Revenez aux catégories pour chercher dans tout le catalogue.`
+            }
+            action={
+              saisie === '' ? undefined : (
+                <Bouton onClick={revenirAuxCategories}>Chercher dans tout le catalogue</Bouton>
+              )
+            }
+          />
         ) : (
-          <Tuiles>
-            {restants.map((produit) => (
-              <TuileProduit key={produit.id} produit={produit} onClick={() => onChoisir(produit)} />
-            ))}
-          </Tuiles>
+          <>
+            {saisie !== '' ? (
+              <p className="mb-2 px-0.5 text-sm text-encre-600">
+                {compter(trouves.length)} pour « {saisie} » dans ce rayon.
+              </p>
+            ) : null}
+            <Tuiles>
+              {trouves.map((produit) => (
+                <TuileProduit
+                  key={produit.id}
+                  produit={produit}
+                  onClick={() => onChoisir(produit)}
+                />
+              ))}
+            </Tuiles>
+          </>
         )}
       </div>
     </div>
