@@ -1,0 +1,38 @@
+[package]
+name = "boutique"
+version = "0.1.0"
+description = "Gestion de boutique hors ligne : smartphones, accessoires et informatique"
+authors = ["Boutique"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+# Nom du crate exposé à main.rs ; les trois types sont requis par Tauri v2.
+name = "boutique_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# Base locale : SQLite embarquée, migrations déclarées côté Rust.
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Version alignée sur celle de tauri-plugin-sql : les types de pool doivent être
+# identiques pour ouvrir une transaction sur SON pool.
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio"] }
+# Sélection de fichiers (import Excel) et écriture des exports.
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+# Ouvre un PDF ou un dossier de sauvegarde dans le système, jamais dans la WebView.
+tauri-plugin-opener = "2"
+
+[profile.release]
+# Distribué sur des postes de boutique modestes : on optimise la taille.
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
