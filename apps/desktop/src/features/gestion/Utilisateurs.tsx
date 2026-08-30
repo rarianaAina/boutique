@@ -4,6 +4,7 @@ import {
   PAGE_GROUPS,
   PAGE_LABELS,
   PERMISSION_GROUPS,
+  PERMISSIONS,
   PERMISSION_LABELS,
   USER_STATUS,
   isPagePermission,
@@ -13,7 +14,14 @@ import { UserRepository } from '@/core/db/repositories/user.repository';
 import { RoleRepository } from '@/core/db/repositories/role.repository';
 import { ShopRepository } from '@/core/db/repositories/shop.repository';
 import { UserService } from '@/core/services/auth.service';
-import { Carte, Chargement, EnTetePage, Erreur, Information } from '@/components/ui/Page';
+import {
+  Carte,
+  Chargement,
+  EnTetePage,
+  Erreur,
+  Information,
+  LectureSeule,
+} from '@/components/ui/Page';
 import { Badge } from '@/components/ui/Badge';
 import { Bouton } from '@/components/ui/Bouton';
 import { Dialogue } from '@/components/ui/Dialogue';
@@ -31,7 +39,10 @@ import { formaterDate, messageDe, useChargement } from '@/app/hooks';
  * de modifier ce que peut faire « le caissier » en un endroit.
  */
 export function Utilisateurs() {
-  const { db } = useSession();
+  const { db, peut } = useSession();
+  // La page peut être ouverte en consultation : voir qui a quel rôle est utile
+  // à un gérant qui n'administre pas les comptes pour autant.
+  const peutAdministrer = peut(PERMISSIONS.userManage);
   const [onglet, setOnglet] = useState<'utilisateurs' | 'roles'>('utilisateurs');
   const [edite, setEdite] = useState<string | null>(null);
   const [creation, setCreation] = useState(false);
@@ -58,7 +69,7 @@ export function Utilisateurs() {
         titre="Utilisateurs et rôles"
         sousTitre="Les comptes, et ce que chaque rôle peut ouvrir et faire."
         actions={
-          onglet === 'utilisateurs' ? (
+          onglet === 'utilisateurs' && peutAdministrer ? (
             <Bouton variante="principal" icone="plus" onClick={() => setCreation(true)}>
               Nouvel utilisateur
             </Bouton>
@@ -196,7 +207,7 @@ export function Utilisateurs() {
                         setRoleEdite(l.id);
                       }}
                     >
-                      Régler les accès
+                      {peutAdministrer ? 'Régler les accès' : 'Voir les accès'}
                     </Bouton>
                   </span>
                 ),
@@ -251,8 +262,9 @@ function FormulaireUtilisateur({
   onEnregistre: () => void;
 }) {
   const contexte = useContexte();
-  const { db, shopId } = useSession();
+  const { db, shopId, peut } = useSession();
   const { notifier } = useNotifications();
+  const peutAdministrer = peut(PERMISSIONS.userManage);
   const [valeurs, setValeurs] = useState<Record<string, string>>({});
   const [motDePasse, setMotDePasse] = useState('');
   const [erreur, setErreur] = useState<string | null>(null);
@@ -305,16 +317,19 @@ function FormulaireUtilisateur({
       pied={
         <>
           <Bouton onClick={onFermer} disabled={occupe}>
-            Annuler
+            {peutAdministrer ? 'Annuler' : 'Fermer'}
           </Bouton>
-          <Bouton variante="principal" occupe={occupe} onClick={() => void enregistrer()}>
-            Enregistrer
-          </Bouton>
+          {peutAdministrer ? (
+            <Bouton variante="principal" occupe={occupe} onClick={() => void enregistrer()}>
+              Enregistrer
+            </Bouton>
+          ) : null}
         </>
       }
     >
-      <div className="space-y-3">
+      <fieldset disabled={!peutAdministrer} className="space-y-3">
         {erreur ? <Erreur message={erreur} /> : null}
+        {!peutAdministrer ? <LectureSeule quoi="gérer les comptes" /> : null}
         <div className="grid grid-cols-2 gap-3">
           <Champ
             label="Nom complet"
@@ -372,7 +387,7 @@ function FormulaireUtilisateur({
               : 'Au moins 8 caractères.'
           }
         />
-      </div>
+      </fieldset>
     </Dialogue>
   );
 }
@@ -402,7 +417,8 @@ function FormulaireRole({
   onFermer: () => void;
   onEnregistre: () => void;
 }) {
-  const { db } = useSession();
+  const { db, peut } = useSession();
+  const peutAdministrer = peut(PERMISSIONS.userManage);
   const { notifier } = useNotifications();
   const [choisies, setChoisies] = useState<Set<Permission> | null>(null);
   const [onglet, setOnglet] = useState<'pages' | 'actions'>('pages');
@@ -462,15 +478,18 @@ function FormulaireRole({
             {pagesActives.length} page(s) · {actionsActives.length} action(s)
           </span>
           <Bouton onClick={onFermer} disabled={occupe}>
-            Annuler
+            {peutAdministrer ? 'Annuler' : 'Fermer'}
           </Bouton>
-          <Bouton variante="principal" occupe={occupe} onClick={() => void enregistrer()}>
-            Enregistrer
-          </Bouton>
+          {peutAdministrer ? (
+            <Bouton variante="principal" occupe={occupe} onClick={() => void enregistrer()}>
+              Enregistrer
+            </Bouton>
+          ) : null}
         </>
       }
     >
-      <div className="space-y-4">
+      <fieldset disabled={!peutAdministrer} className="space-y-4">
+        {!peutAdministrer ? <LectureSeule quoi="modifier les rôles" /> : null}
         <Information>
           L'accès à une page et le droit d'y agir sont deux réglages distincts. Un rôle peut
           consulter les achats sans pouvoir réceptionner, ou tenir la caisse sans voir les marges.
@@ -564,7 +583,7 @@ function FormulaireRole({
             })}
           </div>
         )}
-      </div>
+      </fieldset>
     </Dialogue>
   );
 }

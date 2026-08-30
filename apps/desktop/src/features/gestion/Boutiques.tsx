@@ -1,8 +1,15 @@
 import { useState } from 'react';
-import { SHOP_STATUS } from '@boutique/shared';
+import { PERMISSIONS, SHOP_STATUS } from '@boutique/shared';
 import type { ShopStatus } from '@boutique/shared';
 import { ShopService, type ShopSummary } from '@/core/services/shop.service';
-import { Carte, EnTetePage, Erreur, Information, Avertissement } from '@/components/ui/Page';
+import {
+  Avertissement,
+  Carte,
+  EnTetePage,
+  Erreur,
+  Information,
+  LectureSeule,
+} from '@/components/ui/Page';
 import { Badge } from '@/components/ui/Badge';
 import { Bouton } from '@/components/ui/Bouton';
 import { Confirmation, Dialogue } from '@/components/ui/Dialogue';
@@ -240,7 +247,9 @@ function FormulaireBoutique({
   onEnregistre: () => void;
 }) {
   const contexte = useContexte();
+  const { peut } = useSession();
   const { notifier } = useNotifications();
+  const peutModifier = peut(PERMISSIONS.shopManage);
   const [valeurs, setValeurs] = useState<Record<string, string>>({});
   const [erreur, setErreur] = useState<string | null>(null);
   const [occupe, setOccupe] = useState(false);
@@ -282,16 +291,19 @@ function FormulaireBoutique({
       pied={
         <>
           <Bouton onClick={onFermer} disabled={occupe}>
-            Annuler
+            {peutModifier ? 'Annuler' : 'Fermer'}
           </Bouton>
-          <Bouton variante="principal" occupe={occupe} onClick={() => void enregistrer()}>
-            Enregistrer
-          </Bouton>
+          {peutModifier ? (
+            <Bouton variante="principal" occupe={occupe} onClick={() => void enregistrer()}>
+              Enregistrer
+            </Bouton>
+          ) : null}
         </>
       }
     >
-      <div className="space-y-3">
+      <fieldset disabled={!peutModifier} className="space-y-3">
         {erreur ? <Erreur message={erreur} /> : null}
+        {!peutModifier ? <LectureSeule quoi="modifier les boutiques" /> : null}
 
         <div className="grid grid-cols-3 gap-3">
           <Champ
@@ -346,7 +358,7 @@ function FormulaireBoutique({
             aide="Une boutique suspendue reste visible mais n'accepte plus de transfert."
           />
         </div>
-      </div>
+      </fieldset>
     </Dialogue>
   );
 }

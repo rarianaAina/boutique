@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DEFAULT_NUMBERING, formatDocumentNumber } from '@boutique/shared';
+import { DEFAULT_NUMBERING, PERMISSIONS, formatDocumentNumber } from '@boutique/shared';
 import { SettingRepository, SETTING_KEYS } from '@/core/db/repositories/setting.repository';
 import { ShopRepository } from '@/core/db/repositories/shop.repository';
 import { BackupService, type BackupInfo } from '@/core/services/backup.service';
@@ -13,6 +13,7 @@ import {
   Erreur,
   Information,
   Avertissement,
+  LectureSeule,
 } from '@/components/ui/Page';
 import { Badge } from '@/components/ui/Badge';
 import { Bouton } from '@/components/ui/Bouton';
@@ -40,7 +41,8 @@ const DEVISES = [
 
 export function Parametres() {
   const contexte = useContexte();
-  const { db, shopId, shopCode, settings, rechargerParametres } = useSession();
+  const { db, shopId, shopCode, settings, rechargerParametres, peut } = useSession();
+  const peutRegler = peut(PERMISSIONS.settingsManage);
   const { notifier } = useNotifications();
 
   const [valeurs, setValeurs] = useState<Record<string, string>>({});
@@ -169,13 +171,17 @@ export function Parametres() {
       <EnTetePage
         titre="Paramètres"
         actions={
-          <Bouton variante="principal" occupe={occupe} onClick={() => void enregistrer()}>
-            Enregistrer
-          </Bouton>
+          peutRegler ? (
+            <Bouton variante="principal" occupe={occupe} onClick={() => void enregistrer()}>
+              Enregistrer
+            </Bouton>
+          ) : null
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      {!peutRegler ? <LectureSeule quoi="modifier les paramètres" /> : null}
+
+      <fieldset disabled={!peutRegler} className="grid gap-4 lg:grid-cols-2">
         <Carte titre="Boutique">
           {boutique.chargement ? (
             <Chargement />
@@ -392,7 +398,7 @@ export function Parametres() {
             si un total paraît incohérent après un incident.
           </Avertissement>
         </Carte>
-      </div>
+      </fieldset>
 
       <Confirmation
         ouvert={demonstration}

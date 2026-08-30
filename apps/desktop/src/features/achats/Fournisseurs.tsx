@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { PERMISSIONS } from '@boutique/shared';
 import { SupplierRepository, type SupplierInput } from '@/core/db/repositories/supplier.repository';
 import { SupplierService } from '@/core/services/catalog.service';
-import { Carte, EnTetePage, Erreur } from '@/components/ui/Page';
+import { Carte, EnTetePage, Erreur, LectureSeule } from '@/components/ui/Page';
 import { Badge } from '@/components/ui/Badge';
 import { Bouton } from '@/components/ui/Bouton';
 import { Dialogue } from '@/components/ui/Dialogue';
@@ -115,9 +115,10 @@ function FicheFournisseur({
   onEnregistre: () => void;
 }) {
   const contexte = useContexte();
-  const { db } = useSession();
+  const { db, peut } = useSession();
   const { notifier } = useNotifications();
   const monnaie = useMonnaie();
+  const peutModifier = peut(PERMISSIONS.supplierManage);
   const [valeurs, setValeurs] = useState<Record<string, string>>({});
   /** `null` tant que l'utilisateur n'a pas touché la case : la valeur du
    *  fournisseur chargé fait alors foi. */
@@ -176,16 +177,19 @@ function FicheFournisseur({
       pied={
         <>
           <Bouton onClick={onFermer} disabled={occupe}>
-            Annuler
+            {peutModifier ? 'Annuler' : 'Fermer'}
           </Bouton>
-          <Bouton variante="principal" occupe={occupe} onClick={() => void enregistrer()}>
-            Enregistrer
-          </Bouton>
+          {peutModifier ? (
+            <Bouton variante="principal" occupe={occupe} onClick={() => void enregistrer()}>
+              Enregistrer
+            </Bouton>
+          ) : null}
         </>
       }
     >
-      <div className="space-y-3">
+      <fieldset disabled={!peutModifier} className="space-y-3">
         {erreur ? <Erreur message={erreur} /> : null}
+        {!peutModifier ? <LectureSeule quoi="modifier les fournisseurs" /> : null}
 
         {donnees.donnees?.resume ? (
           <div className="grid grid-cols-3 gap-3 rounded-md bg-encre-50 px-3 py-2.5 text-sm">
@@ -271,7 +275,7 @@ function FicheFournisseur({
           checked={actif ?? fournisseur?.isActive ?? true}
           onChange={(e) => setActif(e.target.checked)}
         />
-      </div>
+      </fieldset>
     </Dialogue>
   );
 }

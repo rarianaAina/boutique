@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { PERMISSIONS } from '@boutique/shared';
 import { SyncEngine, type SyncOutcome } from '@/core/sync/engine';
 import { HttpSyncTransport } from '@/core/sync/transport';
 import { OutboxRepository } from '@/core/db/repositories/outbox.repository';
@@ -12,6 +13,7 @@ import {
   Avertissement,
   Vide,
   CarteChiffre,
+  LectureSeule,
 } from '@/components/ui/Page';
 import { Badge } from '@/components/ui/Badge';
 import { Bouton } from '@/components/ui/Bouton';
@@ -33,7 +35,10 @@ import { formaterDate, messageDe, useChargement } from '@/app/hooks';
  */
 export function Synchronisation() {
   const contexte = useContexte();
-  const { db, shopId, settings, deviceId, rechargerParametres } = useSession();
+  const { db, shopId, settings, deviceId, rechargerParametres, peut } = useSession();
+  // Consulter l'état de la file est utile à un gérant ; la déclencher engage
+  // une connexion et modifie les données des autres boutiques.
+  const peutSynchroniser = peut(PERMISSIONS.syncRun);
   const { notifier } = useNotifications();
   const [resultat, setResultat] = useState<SyncOutcome | null>(null);
   const [occupe, setOccupe] = useState(false);
@@ -97,13 +102,15 @@ export function Synchronisation() {
             variante="principal"
             icone="synchro"
             occupe={occupe}
-            disabled={!instantane?.serverConfigured}
+            disabled={!peutSynchroniser || !instantane?.serverConfigured}
             onClick={() => void synchroniser()}
           >
             Synchroniser maintenant
           </Bouton>
         }
       />
+
+      {!peutSynchroniser ? <LectureSeule quoi="lancer une synchronisation" /> : null}
 
       {!instantane?.serverConfigured ? (
         <Avertissement>

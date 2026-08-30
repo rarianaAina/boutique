@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PERMISSIONS } from '@boutique/shared';
 import { InventoryService, type InventoryLineView } from '@/core/services/inventory.service';
 import { toCsv, exportFileName } from '@/core/services/export.service';
 import { Carte, Chargement, EnTetePage, Erreur, Information, Vide } from '@/components/ui/Page';
@@ -7,7 +8,7 @@ import { Bouton } from '@/components/ui/Bouton';
 import { Confirmation } from '@/components/ui/Dialogue';
 import { ChampRecherche } from '@/components/ui/Tableau';
 import { useNotifications } from '@/components/ui/Notifications';
-import { useContexte } from '@/app/session';
+import { useContexte, useSession } from '@/app/session';
 import { formaterDate, messageDe, useChargement } from '@/app/hooks';
 import { telecharger } from '@/features/gestion/telechargement';
 
@@ -25,7 +26,9 @@ import { telecharger } from '@/features/gestion/telechargement';
  */
 export function Inventaire() {
   const contexte = useContexte();
+  const { peut } = useSession();
   const { notifier } = useNotifications();
+  const peutInventorier = peut(PERMISSIONS.inventoryManage);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [recherche, setRecherche] = useState('');
   const [validation, setValidation] = useState(false);
@@ -125,7 +128,8 @@ export function Inventaire() {
             : 'Aucun inventaire en cours'
         }
         actions={
-          courante.donnees && courante.donnees.session.status === 'OPEN' ? (
+          !peutInventorier ? null : courante.donnees &&
+            courante.donnees.session.status === 'OPEN' ? (
             <>
               <Bouton icone="export" onClick={exporter}>
                 Exporter la feuille
@@ -224,7 +228,9 @@ export function Inventaire() {
                           <input
                             defaultValue={ligne.counted ?? ''}
                             inputMode="numeric"
-                            disabled={courante.donnees?.session.status !== 'OPEN'}
+                            disabled={
+                              !peutInventorier || courante.donnees?.session.status !== 'OPEN'
+                            }
                             onBlur={(evenement) => void compter(ligne, evenement.target.value)}
                             className="h-7 w-20 rounded border border-encre-300 px-2 text-right"
                             data-nombre

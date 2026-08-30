@@ -123,6 +123,29 @@ export function Information({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Bandeau de consultation seule.
+ *
+ * Depuis que l'ACCÈS à une page et le DROIT D'Y AGIR sont deux réglages
+ * distincts, un rôle peut légitimement ouvrir un écran sans pouvoir en modifier
+ * le contenu. L'écran doit alors le DIRE, et retirer les boutons : laisser un
+ * « Enregistrer » qui échouera est pire que de ne rien proposer — l'utilisateur
+ * saisit, valide, et découvre le refus après coup.
+ */
+export function LectureSeule({ quoi }: { quoi: string }) {
+  return (
+    <div className="flex items-start gap-3 rounded-md border border-encre-200 bg-encre-50 px-3.5 py-2.5 text-sm text-encre-700">
+      <span className="mt-0.5 shrink-0 text-encre-400">
+        <Icone nom="info" taille={16} />
+      </span>
+      <span>
+        Consultation seule : votre rôle ne permet pas de {quoi}. Un administrateur peut le régler
+        dans « Utilisateurs et rôles ».
+      </span>
+    </div>
+  );
+}
+
 export function Avertissement({ children }: { children: ReactNode }) {
   return (
     <div className="flex items-start gap-3 rounded-md border border-alerte-200 bg-alerte-50 px-3.5 py-3 text-sm text-alerte-900">

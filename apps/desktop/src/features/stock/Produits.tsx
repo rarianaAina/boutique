@@ -11,7 +11,14 @@ import { SupplierRepository } from '@/core/db/repositories/supplier.repository';
 import { ProductService } from '@/core/services/catalog.service';
 import { StockService } from '@/core/services/stock.service';
 import { toCsv, csvMoney, exportFileName } from '@/core/services/export.service';
-import { Carte, Chargement, EnTetePage, Erreur, Information } from '@/components/ui/Page';
+import {
+  Carte,
+  Chargement,
+  EnTetePage,
+  Erreur,
+  Information,
+  LectureSeule,
+} from '@/components/ui/Page';
 import { Badge } from '@/components/ui/Badge';
 import { Bouton } from '@/components/ui/Bouton';
 import { Confirmation, Dialogue } from '@/components/ui/Dialogue';
@@ -299,6 +306,10 @@ function FormulaireProduit({
   const [occupe, setOccupe] = useState(false);
   const [entree, setEntree] = useState(false);
   const [suppression, setSuppression] = useState(false);
+  // Un caissier ouvre la fiche pour consulter un prix : c'est légitime. Il ne
+  // doit pas pour autant y trouver un formulaire modifiable et un bouton
+  // « Supprimer » qui échoueront au service.
+  const peutModifier = peut(PERMISSIONS.productManage);
 
   const references = useChargement(async () => {
     if (!db) return { categories: [], fournisseurs: [], produit: null };
@@ -368,12 +379,14 @@ function FormulaireProduit({
     <>
       <Dialogue
         ouvert
-        titre={productId ? 'Modifier le produit' : 'Nouveau produit'}
+        titre={
+          productId ? (peutModifier ? 'Modifier le produit' : 'Fiche produit') : 'Nouveau produit'
+        }
         onFermer={onFermer}
         largeur="lg"
         pied={
           <>
-            {productId ? (
+            {productId && peutModifier ? (
               <Bouton
                 variante="danger"
                 icone="poubelle"
@@ -389,16 +402,19 @@ function FormulaireProduit({
               </Bouton>
             ) : null}
             <Bouton onClick={onFermer} disabled={occupe}>
-              Annuler
+              {peutModifier ? 'Annuler' : 'Fermer'}
             </Bouton>
-            <Bouton variante="principal" occupe={occupe} onClick={() => void enregistrer()}>
-              Enregistrer
-            </Bouton>
+            {peutModifier ? (
+              <Bouton variante="principal" occupe={occupe} onClick={() => void enregistrer()}>
+                Enregistrer
+              </Bouton>
+            ) : null}
           </>
         }
       >
-        <div className="space-y-3">
+        <fieldset disabled={!peutModifier} className="space-y-3">
           {erreur ? <Erreur message={erreur} /> : null}
+          {!peutModifier ? <LectureSeule quoi="modifier les produits" /> : null}
 
           <div className="grid grid-cols-3 gap-3">
             <Champ
@@ -538,7 +554,7 @@ function FormulaireProduit({
             value={champ('description', produit?.description ?? '')}
             onChange={(e) => changer('description', e.target.value)}
           />
-        </div>
+        </fieldset>
       </Dialogue>
 
       {suppression && productId ? (
