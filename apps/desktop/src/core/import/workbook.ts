@@ -25,7 +25,54 @@ export interface SheetData {
 }
 
 export function readWorkbook(data: ArrayBuffer | Uint8Array): XLSX.WorkBook {
-  return XLSX.read(data, { type: 'array', cellDates: false, raw: true });
+  const workbook = XLSX.read(data, { type: 'array', cellDates: false, raw: true });
+  for (const name of workbook.SheetNames) {
+    const sheet = workbook.Sheets[name];
+    if (sheet) resserrerPlage(sheet);
+  }
+  return workbook;
+}
+
+/**
+ * Ramène la plage déclarée d'une feuille à ses cellules réellement remplies.
+ *
+ * INDISPENSABLE, ET PAS SEULEMENT PAR PROPRETÉ : Excel déclare `A1:L1048576`
+ * dès qu'un format a été appliqué à des colonnes entières — ce que fait tout le
+ * monde en coloriant un en-tête. Les fichiers du client sont dans ce cas, et
+ * `sheet_to_json` parcourt alors la plage annoncée, cellule par cellule : huit
+ * secondes pour lire trois lignes de housses, une demi-minute par classeur,
+ * pendant lesquelles l'application semble figée.
+ *
+ * On relit donc les adresses effectivement présentes — quelques dizaines — et
+ * l'on réécrit la plage. Le gain est de l'ordre de mille fois.
+ */
+function resserrerPlage(sheet: XLSX.WorkSheet): void {
+  const declaree = sheet['!ref'] ? XLSX.utils.decode_range(sheet['!ref']) : null;
+  if (!declaree) return;
+
+  let derniereLigne = -1;
+  let derniereColonne = -1;
+  for (const adresse of Object.keys(sheet)) {
+    // Les métadonnées de la feuille (« !ref », « !cols »…) ne sont pas des
+    // cellules.
+    if (adresse.startsWith('!')) continue;
+    const cellule = sheet[adresse] as XLSX.CellObject | undefined;
+    if (!cellule || cellule.t === 'z') continue;
+    if (cellule.v === undefined || cellule.v === null || cellule.v === '') continue;
+    const { r, c } = XLSX.utils.decode_cell(adresse);
+    if (r > derniereLigne) derniereLigne = r;
+    if (c > derniereColonne) derniereColonne = c;
+  }
+
+  if (derniereLigne < 0 || derniereColonne < 0) {
+    // Feuille vide : une plage d'une seule cellule vaut mieux qu'un million.
+    sheet['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: 0, c: 0 } });
+    return;
+  }
+  sheet['!ref'] = XLSX.utils.encode_range({
+    s: { r: Math.max(0, declaree.s.r), c: Math.max(0, declaree.s.c) },
+    e: { r: derniereLigne, c: derniereColonne },
+  });
 }
 
 export function listSheets(workbook: XLSX.WorkBook): SheetInfo[] {
@@ -34,6 +81,8 @@ export function listSheets(workbook: XLSX.WorkBook): SheetInfo[] {
     const range = sheet?.['!ref'] ? XLSX.utils.decode_range(sheet['!ref']) : null;
     return {
       name,
+      // La plage a été resserrée à la lecture : ce compte est celui des lignes
+      // réellement remplies, en-tête déduite.
       rows: range ? range.e.r - range.s.r : 0,
       columns: range ? range.e.c - range.s.c + 1 : 0,
     };
