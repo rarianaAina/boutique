@@ -4,7 +4,7 @@ import { UserRepository, type UserInput } from '../db/repositories/user.reposito
 import { RoleRepository } from '../db/repositories/role.repository';
 import { AUDIT_ACTIONS, AuditRepository } from '../db/repositories/audit.repository';
 import { checkPasswordStrength, hashPassword, needsRehash, verifyPassword } from '../auth/password';
-import { BusinessError, assertCan, type AppContext } from './context';
+import { BusinessError, assertCan, assertQuota, type AppContext } from './context';
 import type { SqlExecutor } from '../db/client';
 
 /**
@@ -155,6 +155,11 @@ export class UserService {
     if (problem) throw new BusinessError(problem);
 
     const users = new UserRepository(this.context.db);
+
+    // Le plafond porte sur les comptes ACTIFS de tout le poste, toutes
+    // boutiques confondues : c'est ce qui a été vendu.
+    assertQuota(this.context, 'utilisateurs', (await users.list()).length, 'compte(s)');
+
     if (await users.byLogin(input.login)) {
       throw new BusinessError(`L'identifiant « ${input.login} » est déjà utilisé.`);
     }

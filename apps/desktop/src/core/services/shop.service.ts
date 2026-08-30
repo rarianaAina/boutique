@@ -4,7 +4,7 @@ import { ShopRepository, type ShopInput } from '../db/repositories/shop.reposito
 import { UserRepository } from '../db/repositories/user.repository';
 import { AUDIT_ACTIONS } from '../db/repositories/audit.repository';
 import { AuditService } from './audit.service';
-import { BusinessError, assertCan, type AppContext } from './context';
+import { BusinessError, assertCan, assertQuota, type AppContext } from './context';
 
 /**
  * Boutiques de la société.
@@ -85,6 +85,13 @@ export class ShopService {
 
   async create(input: ShopInput): Promise<string> {
     assertCan(this.context, PERMISSIONS.shopManage);
+
+    // Le plafond de la licence porte sur le NOMBRE de boutiques, pas sur
+    // l'accès à l'écran : on modifie la sienne quoi qu'il arrive, on n'en
+    // ajoute une seconde que si elle a été vendue.
+    const existantes = await new ShopRepository(this.context.db).list();
+    assertQuota(this.context, 'boutiques', existantes.length, 'boutique(s)');
+
     await this.validate(input, null);
 
     let id = '';

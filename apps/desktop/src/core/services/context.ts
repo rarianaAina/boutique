@@ -1,5 +1,5 @@
-import { PermissionDeniedError, requirePermission } from '@boutique/shared';
-import type { Permission, Principal, SessionUser } from '@boutique/shared';
+import { PermissionDeniedError, licenceQuota, requirePermission } from '@boutique/shared';
+import type { LicenceStatus, Permission, Principal, SessionUser } from '@boutique/shared';
 import type { ShopSettings } from '../db/repositories/setting.repository';
 import type { SqlExecutor } from '../db/client';
 
@@ -19,6 +19,15 @@ export interface AppContext {
   shopId: string;
   shopCode: string;
   settings: ShopSettings;
+  /**
+   * Licence du poste, quand elle est connue.
+   *
+   * Facultative à dessein : l'installation initiale et les épreuves construisent
+   * un contexte avant qu'il y ait quoi que ce soit à activer. Absente, les
+   * plafonds ne s'appliquent pas — c'est le comportement d'un poste en essai,
+   * où tout est ouvert.
+   */
+  licence?: LicenceStatus | null;
 }
 
 export function principalOf(context: AppContext): Principal | null {
@@ -75,4 +84,46 @@ export class BusinessError extends Error {
     super(message);
     this.name = 'BusinessError';
   }
+}
+
+/**
+ * Refus opposé à un plafond de licence atteint.
+ *
+ * Distinct d'une permission manquante, et le message doit le dire : un droit se
+ * règle chez le client, dans « Utilisateurs et rôles » ; un plafond ne se lève
+ * qu'en achetant. Les confondre ferait chercher pendant une heure un réglage
+ * qui n'existe pas.
+ */
+export class QuotaError extends BusinessError {
+  constructor(message: string) {
+    super(message, 'QUOTA');
+    this.name = 'QuotaError';
+  }
+}
+
+/**
+ * Vérifie qu'un plafond de la licence n'est pas déjà atteint.
+ *
+ * `actuel` est le nombre d'éléments DÉJÀ existants : on refuse quand il atteint
+ * le plafond, puisque l'appel qui suit en ajouterait un.
+ *
+ * Sans licence connue — installation initiale, épreuves — rien n'est refusé.
+ * Un plafond absent de la charge vaut « un seul » : le silence se lit toujours
+ * dans le sens le plus prudent.
+ */
+export function assertQuota(
+  context: AppContext,
+  cle: string,
+  actuel: number,
+  libelle: string,
+): void {
+  const licence = context.licence;
+  if (!licence) return;
+
+  const plafond = licenceQuota(licence, cle, 1);
+  if (actuel < plafond) return;
+  throw new QuotaError(
+    `Votre licence autorise ${plafond} ${libelle}${plafond > 1 ? '' : ''}. ` +
+      `Pour en ajouter, il faut étendre la licence de ce poste.`,
+  );
 }

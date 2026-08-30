@@ -253,8 +253,11 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
   );
 
   const contexte = useMemo<AppContext | null>(
-    () => (db && session ? { db, session, shopId: shop.id, shopCode: shop.code, settings } : null),
-    [db, session, shop.id, shop.code, settings],
+    () =>
+      db && session
+        ? { db, session, shopId: shop.id, shopCode: shop.code, settings, licence }
+        : null,
+    [db, session, shop.id, shop.code, settings, licence],
   );
 
   const valeur = useMemo<ValeurSession>(

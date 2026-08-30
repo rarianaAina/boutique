@@ -13,8 +13,12 @@ import {
   type Produit,
 } from '@boutique/shared';
 import { NAVIGATION } from '@/app/routes';
+import { ShopService } from '@/core/services/shop.service';
+import { UserService } from '@/core/services/auth.service';
+import { RoleRepository } from '@/core/db/repositories/role.repository';
 import { LicenceService } from '@/core/licence/licence.service';
 import { POSTE_KEYS, SettingRepository } from '@/core/db/repositories/setting.repository';
+import { contextFor } from './helpers/context';
 import { seedFixture, type Fixture } from './helpers/fixtures';
 
 /**
@@ -308,5 +312,96 @@ describe('écrans et modules vendus', () => {
 
   it('embarque la vraie clé publique de l’éditeur', () => {
     expect(LICENCE_PUBLIC_KEY).toMatch(/^MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/);
+  });
+});
+
+/* ─── Plafonds de la licence ───────────────────────────────────────────── */
+
+describe('plafonds', () => {
+  let fixture: Fixture;
+
+  beforeEach(async () => {
+    fixture = await seedFixture();
+  });
+
+  /** Contexte muni d'une licence qui accorde ces plafonds. */
+  const avecPlafonds = async (quotas: Record<string, number>) => {
+    const base = await contextFor(fixture.db, fixture.adminId);
+    return {
+      ...base,
+      licence: {
+        state: 'valide' as const,
+        daysLeft: 300,
+        graceLeft: null,
+        payload: {
+          v: 2,
+          p: 'boutique',
+          c: '',
+          n: 'ARINA',
+          s: 'standard',
+          f: fonctionsDe(BOUTIQUE),
+          q: quotas,
+          i: '2026-01-01',
+          e: '2027-01-01',
+        },
+      },
+    };
+  };
+
+  it('refuse une boutique de plus quand le plafond est atteint', async () => {
+    // Le jeu de départ en compte déjà deux.
+    const contexte = await avecPlafonds({ boutiques: 2 });
+    await expect(
+      new ShopService(contexte).create({ code: 'TMV', name: 'Tamatave' }),
+    ).rejects.toThrow(/autorise 2 boutique/);
+  });
+
+  it('accepte tant que le plafond n’est pas atteint', async () => {
+    const contexte = await avecPlafonds({ boutiques: 5 });
+    await expect(
+      new ShopService(contexte).create({ code: 'TMV', name: 'Tamatave' }),
+    ).resolves.toBeTruthy();
+  });
+
+  it('laisse MODIFIER une boutique même au plafond', async () => {
+    // Éditer le nom et l'adresse de sa propre boutique n'est pas une option
+    // vendable : c'est ce qui s'imprime sur les tickets.
+    const contexte = await avecPlafonds({ boutiques: 1 });
+    await expect(
+      new ShopService(contexte).update(fixture.shopA, {
+        code: 'CENT',
+        name: 'Boutique Centre-Ville',
+        address: 'Analakely',
+      }),
+    ).resolves.not.toThrow();
+  });
+
+  it('refuse un compte de plus quand le plafond est atteint', async () => {
+    const contexte = await avecPlafonds({ utilisateurs: 2 });
+    const roles = await new RoleRepository(fixture.db).byCode('SELLER');
+    await expect(
+      new UserService(contexte).create(
+        { shopId: fixture.shopA, fullName: 'Nouveau', login: 'nouveau', roleId: roles!.id },
+        'MotDePasse-2026',
+      ),
+    ).rejects.toThrow(/autorise 2 compte/);
+  });
+
+  it('n’applique aucun plafond sans licence connue', async () => {
+    // Installation initiale et épreuves : un contexte sans licence est celui
+    // d'un poste en essai, où tout est ouvert.
+    const contexte = await contextFor(fixture.db, fixture.adminId);
+    expect(contexte.licence).toBeUndefined();
+    await expect(
+      new ShopService(contexte).create({ code: 'TMV', name: 'Tamatave' }),
+    ).resolves.toBeTruthy();
+  });
+
+  it('lit un plafond absent comme « un seul »', async () => {
+    // Le silence d'une clé se lit toujours dans le sens le plus prudent.
+    const contexte = await avecPlafonds({});
+    await expect(
+      new ShopService(contexte).create({ code: 'TMV', name: 'Tamatave' }),
+    ).rejects.toThrow(/autorise 1 boutique/);
   });
 });

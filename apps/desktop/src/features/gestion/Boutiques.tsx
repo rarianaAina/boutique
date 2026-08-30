@@ -16,6 +16,7 @@ import { Confirmation, Dialogue } from '@/components/ui/Dialogue';
 import { Champ, Liste } from '@/components/ui/Champ';
 import { Tableau } from '@/components/ui/Tableau';
 import { useNotifications } from '@/components/ui/Notifications';
+import { licenceQuota } from '@boutique/shared';
 import { useContexte, useSession } from '@/app/session';
 import { messageDe, useChargement } from '@/app/hooks';
 
@@ -39,7 +40,7 @@ const LIBELLES_STATUT: Record<ShopStatus, { texte: string; ton: 'succes' | 'atte
 
 export function Boutiques() {
   const contexte = useContexte();
-  const { shopId } = useSession();
+  const { shopId, licence } = useSession();
   const { notifier } = useNotifications();
   const [edite, setEdite] = useState<ShopSummary | null>(null);
   const [creation, setCreation] = useState(false);
@@ -49,6 +50,17 @@ export function Boutiques() {
 
   const service = new ShopService(contexte);
   const etat = useChargement(async () => service.list(), [contexte.db]);
+
+  /*
+   * Le plafond de la licence porte sur le NOMBRE de boutiques, pas sur l'accès
+   * à cet écran : on modifie la sienne quoi qu'il arrive. Il est affiché ici
+   * plutôt que laissé au refus du service — buter sur un message après avoir
+   * rempli un formulaire est la manière la plus désagréable d'apprendre qu'on
+   * n'a pas acheté l'option.
+   */
+  const plafond = licenceQuota(licence, 'boutiques', 1);
+  const existantes = etat.donnees?.length ?? 0;
+  const peutAjouter = existantes < plafond;
 
   const agir = async (executer: () => Promise<unknown>, message: string) => {
     setOccupe(true);
@@ -71,16 +83,30 @@ export function Boutiques() {
         titre="Boutiques"
         sousTitre="Toutes les boutiques de la société. Chacune tient sa propre base ; celle-ci est décrite sur tous les postes."
         actions={
-          <Bouton variante="principal" icone="plus" onClick={() => setCreation(true)}>
+          <Bouton
+            variante="principal"
+            icone="plus"
+            disabled={!peutAjouter}
+            onClick={() => setCreation(true)}
+          >
             Nouvelle boutique
           </Bouton>
         }
       />
 
-      <Information>
-        Créer une boutique ici la rend disponible comme destination de transfert. Il faut ensuite
-        installer l'application sur son poste et l'y désigner comme boutique locale.
-      </Information>
+      {peutAjouter ? (
+        <Information>
+          Créer une boutique ici la rend disponible comme destination de transfert. Il faut ensuite
+          installer l'application sur son poste et l'y désigner comme boutique locale.
+          {plafond > 1 ? ` Votre licence en autorise ${plafond}, ${existantes} déclarée(s).` : null}
+        </Information>
+      ) : (
+        <Avertissement>
+          Votre licence autorise {plafond} boutique{plafond > 1 ? 's' : ''}, et elle
+          {plafond > 1 ? ' sont toutes' : ' est'} déclarée{plafond > 1 ? 's' : ''}. Vous pouvez
+          modifier celles qui existent ; en ajouter une demande d’étendre la licence de ce poste.
+        </Avertissement>
+      )}
 
       <Carte compact className="mt-3 min-h-0 flex-1">
         {etat.erreur ? (

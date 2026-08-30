@@ -241,7 +241,11 @@ export const NAVIGATION: Groupe[] = [
         titre: 'Boutiques',
         icone: 'fournisseur',
         permission: PAGE_PERMISSIONS.boutiques,
-        fonction: 'multiboutique',
+        // PAS de fonction de licence : éditer le nom, l'adresse et le
+        // téléphone de sa propre boutique n'est pas une option vendable —
+        // c'est ce qui s'imprime sur les tickets. Ce qui relève du
+        // multi-boutique, c'est d'en avoir PLUSIEURS, et cela se règle par le
+        // plafond de la licence, à la création.
       },
       {
         cle: 'utilisateurs',
