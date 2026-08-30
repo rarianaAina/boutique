@@ -44,12 +44,20 @@ export function Dialogue({
         onFermer();
       }}
       onClose={onFermer}
-      // `m-auto` double la règle de base : une classe utilitaire reste plus
-      // facile à repérer qu'une feuille de style globale si quelqu'un modifie
-      // la mise en page plus tard.
-      className={`m-auto flex max-h-[calc(100dvh-4rem)] w-[92vw] flex-col ${largeurs[largeur]} rounded-lg border border-encre-200 bg-white p-0 shadow-flottant backdrop:bg-encre-950/40`}
+      // Deux choses, et deux seulement.
+      //
+      // `m-auto` rétablit le centrage : le navigateur centre un `<dialog>`
+      // modal grâce au `margin: auto` de sa feuille par défaut, que le
+      // preflight de Tailwind annule en remettant `margin: 0` partout.
+      //
+      // AUCUNE colonne flex ici. Un `<dialog>` est dimensionné en
+      // `height: fit-content` : un corps en `flex-1` (soit `flex: 1 1 0%`, une
+      // base NULLE) ne compte alors plus dans la hauteur, et la boîte se replie
+      // sur son en-tête et son pied — le formulaire devient invisible. Le corps
+      // porte donc simplement sa propre hauteur maximale.
+      className={`m-auto w-[92vw] ${largeurs[largeur]} rounded-lg border border-encre-200 bg-white p-0 shadow-flottant backdrop:bg-encre-950/40`}
     >
-      <header className="flex shrink-0 items-center justify-between gap-4 border-b border-encre-200 px-4 py-3">
+      <header className="flex items-center justify-between gap-4 border-b border-encre-200 px-4 py-3">
         <h2 className="text-encre-900">{titre}</h2>
         <button
           type="button"
@@ -60,9 +68,11 @@ export function Dialogue({
           <Icone nom="croix" taille={16} />
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-auto px-4 py-4">{children}</div>
+      {/* 70 % de la hauteur visible : avec l'en-tête et le pied, la boîte tient
+          sur un écran de comptoir sans que ses boutons sortent de la fenêtre. */}
+      <div className="max-h-[70dvh] overflow-auto px-4 py-4">{children}</div>
       {pied ? (
-        <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-encre-200 bg-encre-50 px-4 py-3">
+        <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-encre-200 bg-encre-50 px-4 py-3">
           {pied}
         </footer>
       ) : null}
