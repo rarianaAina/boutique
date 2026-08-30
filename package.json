@@ -1,0 +1,24 @@
+{
+  "name": "boutique",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "prettier --check .",
+    "format": "prettier --write .",
+    "dev": "pnpm --filter @boutique/desktop dev",
+    "tauri:dev": "pnpm --filter @boutique/desktop tauri:dev",
+    "tauri:build": "pnpm --filter @boutique/desktop tauri:build",
+    "sync:dev": "pnpm --filter @boutique/sync-server dev"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2",
+    "typescript": "^5.9.2"
+  }
+}

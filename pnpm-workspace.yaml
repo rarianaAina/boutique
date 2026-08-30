@@ -1,0 +1,8 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# pnpm bloque les scripts d'installation par défaut ; seuls ces paquets en ont
+# réellement besoin (binaires natifs).
+allowBuilds:
+  esbuild: true

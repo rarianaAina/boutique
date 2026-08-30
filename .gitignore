@@ -1,0 +1,34 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# env — les fichiers d'exemple sont versionnés, les vrais jamais
+.env
+.env.local
+.env.*.local
+.env.production
+!.env.production.example
+
+# tauri / rust — le motif couvre toutes les applications du dépôt : les nommer
+# une par une, c'est oublier la prochaine. `Cargo.lock` reste versionné : il
+# s'agit d'un exécutable, pas d'une bibliothèque, et la reproductibilité de la
+# compilation en dépend.
+apps/*/src-tauri/target/
+apps/*/src-tauri/gen/
+
+# bases locales de développement
+*.db
+*.db-shm
+*.db-wal
+
+# verrous des suites bureautiques, présents tant qu'un classeur d'exemple
+# reste ouvert dans LibreOffice
+.~lock.*#
+
+# éditeurs / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
