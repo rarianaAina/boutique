@@ -11,13 +11,14 @@ import { SupplierRepository } from '@/core/db/repositories/supplier.repository';
 import { ProductService } from '@/core/services/catalog.service';
 import { StockService } from '@/core/services/stock.service';
 import { toCsv, csvMoney, exportFileName } from '@/core/services/export.service';
-import { Carte, EnTetePage, Erreur } from '@/components/ui/Page';
+import { Carte, Chargement, EnTetePage, Erreur, Information } from '@/components/ui/Page';
 import { Badge } from '@/components/ui/Badge';
 import { Bouton } from '@/components/ui/Bouton';
 import { Confirmation, Dialogue } from '@/components/ui/Dialogue';
 import { Champ, Liste, ZoneTexte } from '@/components/ui/Champ';
 import {
   BarreFiltres,
+  BarreSelection,
   ChampRecherche,
   ListeFiltre,
   Pagination,
@@ -53,6 +54,8 @@ export function Produits({ parametre }: { parametre?: string | null }) {
   const [offset, setOffset] = useState(0);
   const [edite, setEdite] = useState<string | null>(parametre ?? null);
   const [creation, setCreation] = useState(false);
+  const [choisis, setChoisis] = useState<Set<string>>(new Set());
+  const [suppressionGroupee, setSuppressionGroupee] = useState(false);
   const limite = 50;
   const voitLesCouts = peut(PERMISSIONS.costView);
 
@@ -110,6 +113,19 @@ export function Produits({ parametre }: { parametre?: string | null }) {
       />
 
       <Carte compact className="min-h-0 flex-1">
+        <BarreSelection nombre={choisis.size} onEffacer={() => setChoisis(new Set())}>
+          {peut(PERMISSIONS.productManage) ? (
+            <Bouton
+              taille="petit"
+              variante="danger"
+              icone="poubelle"
+              onClick={() => setSuppressionGroupee(true)}
+            >
+              Supprimer la sélection
+            </Bouton>
+          ) : null}
+        </BarreSelection>
+
         <BarreFiltres>
           <ChampRecherche
             valeur={recherche}
@@ -236,6 +252,18 @@ export function Produits({ parametre }: { parametre?: string | null }) {
           onChanger={setOffset}
         />
       </Carte>
+
+      {suppressionGroupee ? (
+        <SuppressionGroupee
+          ids={[...choisis]}
+          onFermer={() => setSuppressionGroupee(false)}
+          onFait={() => {
+            setSuppressionGroupee(false);
+            setChoisis(new Set());
+            etat.recharger();
+          }}
+        />
+      ) : null}
 
       {creation || edite ? (
         <FormulaireProduit
@@ -735,5 +763,141 @@ function DialogueSuppression({
         </ul>
       ) : null}
     </Confirmation>
+  );
+}
+
+/**
+ * Suppression de plusieurs produits.
+ *
+ * Chaque produit garde SON issue : effacé si rien ne le cite, archivé s'il a
+ * une histoire. Appliquer une décision unique au lot effacerait des fiches
+ * citées par des ventes — ou archiverait sans raison des fiches vierges.
+ *
+ * Le rapport nomme ce qui n'a pas pu être supprimé plutôt que d'annoncer un
+ * succès global : sur dix produits, il faut savoir lesquels sont passés.
+ */
+function SuppressionGroupee({
+  ids,
+  onFermer,
+  onFait,
+}: {
+  ids: string[];
+  onFermer: () => void;
+  onFait: () => void;
+}) {
+  const contexte = useContexte();
+  const { notifier } = useNotifications();
+  const [occupe, setOccupe] = useState(false);
+  const [rapport, setRapport] = useState<Awaited<ReturnType<ProductService['removeMany']>> | null>(
+    null,
+  );
+
+  const apercu = useChargement(async () => {
+    const service = new ProductService(contexte);
+    const lignes: { id: string; nom: string; effacable: boolean }[] = [];
+    for (const id of ids) {
+      const produit = await new ProductRepository(contexte.db).byId(id);
+      const impact = await service.deletionImpact(id);
+      lignes.push({ id, nom: produit?.name ?? id, effacable: impact.removable });
+    }
+    return lignes;
+  }, [contexte.db, ids.join(',')]);
+
+  const effacables = (apercu.donnees ?? []).filter((ligne) => ligne.effacable).length;
+  const archivables = (apercu.donnees ?? []).length - effacables;
+
+  const supprimer = async () => {
+    setOccupe(true);
+    try {
+      const resultat = await new ProductService(contexte).removeMany(ids);
+      setRapport(resultat);
+      if (resultat.failed.length === 0) {
+        notifier(
+          `${resultat.deleted} supprimé(s) définitivement, ${resultat.archived} archivé(s).`,
+        );
+        onFait();
+      }
+    } catch (cause) {
+      notifier(messageDe(cause), 'erreur');
+    } finally {
+      setOccupe(false);
+    }
+  };
+
+  return (
+    <Dialogue
+      ouvert
+      titre={`Supprimer ${ids.length} produit${ids.length > 1 ? 's' : ''}`}
+      onFermer={rapport ? onFait : onFermer}
+      largeur="md"
+      pied={
+        rapport ? (
+          <Bouton variante="principal" onClick={onFait}>
+            Fermer
+          </Bouton>
+        ) : (
+          <>
+            <Bouton onClick={onFermer} disabled={occupe}>
+              Annuler
+            </Bouton>
+            <Bouton
+              variante="danger"
+              occupe={occupe || apercu.chargement}
+              onClick={() => void supprimer()}
+            >
+              Supprimer
+            </Bouton>
+          </>
+        )
+      }
+    >
+      {apercu.chargement ? (
+        <Chargement libelle="Vérification des documents qui citent ces produits…" />
+      ) : rapport ? (
+        <div className="space-y-3">
+          <Information>
+            {rapport.deleted} produit(s) effacé(s) définitivement, {rapport.archived} archivé(s).
+          </Information>
+          {rapport.failed.length > 0 ? (
+            <>
+              <Erreur
+                message={`${rapport.failed.length} produit(s) n'ont pas pu être supprimés.`}
+              />
+              <ul className="list-disc space-y-0.5 pl-5 text-sm text-encre-700">
+                {rapport.failed.map((echec) => (
+                  <li key={echec.id}>
+                    <strong>{echec.name}</strong> — {echec.reason}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <Information>
+            {effacables} produit(s) seront <strong>effacés définitivement</strong> : rien ne les
+            cite.
+            {archivables > 0 ? (
+              <>
+                {' '}
+                {archivables} seront <strong>archivés</strong> : des ventes, achats ou mouvements
+                les citent, et les effacer rendrait ces documents illisibles.
+              </>
+            ) : null}
+          </Information>
+          <ul className="max-h-64 space-y-0.5 overflow-auto text-sm">
+            {(apercu.donnees ?? []).map((ligne) => (
+              <li key={ligne.id} className="flex items-center justify-between gap-3">
+                <span className="truncate">{ligne.nom}</span>
+                <Badge ton={ligne.effacable ? 'danger' : 'attente'}>
+                  {ligne.effacable ? 'Effacé' : 'Archivé'}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Dialogue>
   );
 }

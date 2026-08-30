@@ -30,6 +30,18 @@ export interface TableauProps<T> {
   /** Ligne mise en évidence (sélection courante). */
   ligneActive?: (ligne: T) => boolean;
   vide?: { titre: string; detail?: string; icone?: NomIcone; action?: ReactNode };
+  /**
+   * Sélection multiple.
+   *
+   * Absente, le tableau n'affiche aucune case : une colonne de cases sur un
+   * tableau sans action groupée coûte de la place et n'apporte rien.
+   */
+  selection?: {
+    clefs: ReadonlySet<string>;
+    onChanger: (clefs: Set<string>) => void;
+    /** Lignes non sélectionnables — une vente annulée, par exemple. */
+    selectionnable?: (ligne: T) => boolean;
+  };
 }
 
 export function Tableau<T>({
@@ -40,6 +52,7 @@ export function Tableau<T>({
   onLigneCliquee,
   ligneActive,
   vide,
+  selection,
 }: TableauProps<T>) {
   if (chargement) return <Chargement />;
   if (lignes.length === 0) {
@@ -53,11 +66,57 @@ export function Tableau<T>({
     );
   }
 
+  const selectionnables = selection
+    ? lignes.filter((ligne) => selection.selectionnable?.(ligne) ?? true)
+    : [];
+  const toutesChoisies =
+    selectionnables.length > 0 &&
+    selectionnables.every((ligne) => selection?.clefs.has(cleDe(ligne)));
+
+  const basculerTout = () => {
+    if (!selection) return;
+    const suite = new Set(selection.clefs);
+    for (const ligne of selectionnables) {
+      const cle = cleDe(ligne);
+      if (toutesChoisies) suite.delete(cle);
+      else suite.add(cle);
+    }
+    selection.onChanger(suite);
+  };
+
+  const basculer = (cle: string) => {
+    if (!selection) return;
+    const suite = new Set(selection.clefs);
+    if (suite.has(cle)) suite.delete(cle);
+    else suite.add(cle);
+    selection.onChanger(suite);
+  };
+
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <table className="tableau">
         <thead>
           <tr>
+            {selection ? (
+              <th style={{ width: '2.5rem' }}>
+                <input
+                  type="checkbox"
+                  aria-label="Tout sélectionner"
+                  className="h-4 w-4 rounded border-encre-400 accent-marque-600"
+                  checked={toutesChoisies}
+                  // L'état INDÉTERMINÉ distingue « rien de choisi » de
+                  // « quelques-uns » : sans lui, une case vide laisserait croire
+                  // qu'aucune ligne n'est sélectionnée alors que trois le sont.
+                  ref={(element) => {
+                    if (element) {
+                      element.indeterminate = !toutesChoisies && selection.clefs.size > 0;
+                    }
+                  }}
+                  onChange={basculerTout}
+                  disabled={selectionnables.length === 0}
+                />
+              </th>
+            ) : null}
             {colonnes.map((colonne) => (
               <th
                 key={colonne.cle}
@@ -71,14 +130,33 @@ export function Tableau<T>({
         </thead>
         <tbody>
           {lignes.map((ligne) => {
-            const actif = ligneActive?.(ligne) ?? false;
+            const cle = cleDe(ligne);
+            const choisie = selection?.clefs.has(cle) ?? false;
+            const actif = choisie || (ligneActive?.(ligne) ?? false);
+            const peutChoisir = selection?.selectionnable?.(ligne) ?? true;
             return (
               <tr
-                key={cleDe(ligne)}
+                key={cle}
                 data-clickable={onLigneCliquee ? '' : undefined}
                 onClick={onLigneCliquee ? () => onLigneCliquee(ligne) : undefined}
                 className={actif ? 'bg-marque-50' : undefined}
               >
+                {selection ? (
+                  <td
+                    // Le clic sur la case ne doit PAS ouvrir la fiche : cocher
+                    // trois lignes ne peut pas ouvrir trois boîtes.
+                    onClick={(evenement) => evenement.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      aria-label="Sélectionner cette ligne"
+                      className="h-4 w-4 rounded border-encre-400 accent-marque-600"
+                      checked={choisie}
+                      disabled={!peutChoisir}
+                      onChange={() => basculer(cle)}
+                    />
+                  </td>
+                ) : null}
                 {colonnes.map((colonne) => (
                   <td key={colonne.cle} className={colonne.num ? 'num' : undefined}>
                     {colonne.rendu(ligne)}
@@ -138,6 +216,36 @@ export function Pagination({
           Suivant
         </Bouton>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Barre d'actions groupées.
+ *
+ * Elle n'apparaît QUE lorsqu'au moins une ligne est choisie, et remplace alors
+ * la barre de filtres : garder les deux côte à côte encombrerait l'écran au
+ * moment précis où l'attention doit se porter sur ce qui a été sélectionné.
+ */
+export function BarreSelection({
+  nombre,
+  onEffacer,
+  children,
+}: {
+  nombre: number;
+  onEffacer: () => void;
+  children: ReactNode;
+}) {
+  if (nombre === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-marque-200 bg-marque-50 px-3 py-2">
+      <span className="text-sm font-medium text-marque-800" data-nombre>
+        {nombre} sélectionné{nombre > 1 ? 's' : ''}
+      </span>
+      <Bouton taille="petit" variante="discret" onClick={onEffacer}>
+        Tout désélectionner
+      </Bouton>
+      <div className="ml-auto flex flex-wrap items-center gap-2">{children}</div>
     </div>
   );
 }

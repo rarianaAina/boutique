@@ -400,6 +400,95 @@ export class StockService {
     });
   }
 
+  /**
+   * Sort plusieurs appareils du stock d'un coup.
+   *
+   * Chaque appareil est traité séparément : un échec sur l'un — parce qu'il
+   * vient d'être vendu — n'empêche pas les autres. Le rapport nomme les
+   * refusés, avec leur identifiant : sur dix IMEI, il faut savoir lesquels.
+   */
+  async writeOffMany(
+    unitIds: readonly string[],
+    status: Extract<UnitStatus, 'LOST' | 'DEFECTIVE' | 'BLOCKED'>,
+    note: string,
+  ): Promise<{ done: number; failed: { id: string; identifier: string; reason: string }[] }> {
+    assertCan(this.context, PERMISSIONS.stockAdjust);
+    const rapport = { done: 0, failed: [] as { id: string; identifier: string; reason: string }[] };
+
+    for (const id of unitIds) {
+      const unite = await this.units.byId(id);
+      try {
+        await this.writeOffUnit(id, status, note);
+        rapport.done += 1;
+      } catch (cause) {
+        rapport.failed.push({
+          id,
+          identifier: unite?.imei1 ?? unite?.serial ?? id.slice(0, 8),
+          reason: cause instanceof Error ? cause.message : String(cause),
+        });
+      }
+    }
+    return rapport;
+  }
+
+  /**
+   * Efface définitivement des appareils saisis par erreur.
+   *
+   * RÉSERVÉ aux appareils qui n'ont jamais bougé : entrés en stock, et rien de
+   * plus. Dès qu'un appareil a été vendu, transféré ou corrigé, son histoire
+   * appartient à la comptabilité de la boutique — on le sort du stock par un
+   * mouvement, on ne l'efface pas.
+   *
+   * C'est le cas d'un IMEI mal recopié qu'on veut retirer dans la minute :
+   * laisser une fiche fantôme bloquerait la ressaisie du bon numéro, puisque
+   * l'IMEI resterait pris.
+   */
+  async deleteUntouched(
+    unitIds: readonly string[],
+  ): Promise<{ deleted: number; kept: { identifier: string; reason: string }[] }> {
+    assertCan(this.context, PERMISSIONS.stockAdjust);
+    const rapport = { deleted: 0, kept: [] as { identifier: string; reason: string }[] };
+
+    for (const id of unitIds) {
+      const unite = await this.units.byId(id);
+      if (!unite) continue;
+      const identifiant = unite.imei1 ?? unite.serial ?? id.slice(0, 8);
+
+      if (unite.status !== 'IN_STOCK') {
+        rapport.kept.push({ identifier: identifiant, reason: `statut « ${unite.status} »` });
+        continue;
+      }
+
+      const mouvements = await this.context.db.select<{ total: number }>(
+        `SELECT COUNT(*) AS total FROM stock_movement
+         WHERE unit_id = ? AND type <> 'PURCHASE_RECEIPT'`,
+        [id],
+      );
+      if ((mouvements[0]?.total ?? 0) > 0) {
+        rapport.kept.push({ identifier: identifiant, reason: 'a déjà bougé' });
+        continue;
+      }
+
+      await this.context.db.transaction(async (tx) => {
+        await tx.execute('DELETE FROM unit_identifier WHERE unit_id = ?', [id]);
+        await tx.execute('DELETE FROM stock_movement WHERE unit_id = ?', [id]);
+        await tx.execute(
+          `DELETE FROM sync_outbox WHERE entity = 'product_unit' AND entity_id = ? AND status = 'PENDING'`,
+          [id],
+        );
+        await tx.execute('DELETE FROM product_unit WHERE id = ?', [id]);
+        await this.audit.record(tx, {
+          action: AUDIT_ACTIONS.softDelete,
+          entity: 'product_unit',
+          entityId: id,
+          before: { identifiant, suppression: 'définitive — appareil jamais sorti du stock' },
+        });
+      });
+      rapport.deleted += 1;
+    }
+    return rapport;
+  }
+
   /* ─── Validations ─────────────────────────────────────────────────────── */
 
   /**

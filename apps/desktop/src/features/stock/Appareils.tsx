@@ -9,13 +9,14 @@ import { SupplierRepository } from '@/core/db/repositories/supplier.repository';
 import { ExchangeRepository } from '@/core/db/repositories/refund.repository';
 import { StockService } from '@/core/services/stock.service';
 import { toCsv, exportFileName } from '@/core/services/export.service';
-import { Carte, Chargement, EnTetePage, Erreur } from '@/components/ui/Page';
+import { Carte, Chargement, EnTetePage, Erreur, Information } from '@/components/ui/Page';
 import { Badge, BadgeUnite } from '@/components/ui/Badge';
 import { Bouton } from '@/components/ui/Bouton';
-import { Dialogue, Confirmation } from '@/components/ui/Dialogue';
+import { Confirmation, Dialogue } from '@/components/ui/Dialogue';
 import { Liste, ZoneTexte } from '@/components/ui/Champ';
 import {
   BarreFiltres,
+  BarreSelection,
   ChampRecherche,
   ListeFiltre,
   Pagination,
@@ -58,6 +59,8 @@ export function Appareils({ parametre }: { parametre?: string | null }) {
   const [portee, setPortee] = useState('boutique');
   const [offset, setOffset] = useState(0);
   const [ouvert, setOuvert] = useState<string | null>(parametre ?? null);
+  const [choisis, setChoisis] = useState<Set<string>>(new Set());
+  const [action, setAction] = useState<'sortie' | 'suppression' | null>(null);
   const limite = 50;
 
   const etat = useChargement(async () => {
@@ -105,6 +108,24 @@ export function Appareils({ parametre }: { parametre?: string | null }) {
       />
 
       <Carte compact className="min-h-0 flex-1">
+        <BarreSelection nombre={choisis.size} onEffacer={() => setChoisis(new Set())}>
+          {peut(PERMISSIONS.stockAdjust) ? (
+            <>
+              <Bouton taille="petit" icone="alerte" onClick={() => setAction('sortie')}>
+                Déclarer perdus ou défectueux
+              </Bouton>
+              <Bouton
+                taille="petit"
+                variante="danger"
+                icone="poubelle"
+                onClick={() => setAction('suppression')}
+              >
+                Supprimer les saisies erronées
+              </Bouton>
+            </>
+          ) : null}
+        </BarreSelection>
+
         <BarreFiltres>
           <ChampRecherche
             valeur={recherche}
@@ -149,6 +170,17 @@ export function Appareils({ parametre }: { parametre?: string | null }) {
             lignes={etat.donnees?.items ?? []}
             cleDe={(ligne) => ligne.id}
             onLigneCliquee={(ligne) => setOuvert(ligne.id)}
+            selection={
+              peut(PERMISSIONS.stockAdjust)
+                ? {
+                    clefs: choisis,
+                    onChanger: setChoisis,
+                    // Un appareil vendu ne se sort pas du stock : il passe par
+                    // un retour ou un remboursement, qui rendent l'argent.
+                    selectionnable: (ligne) => ligne.status !== 'SOLD',
+                  }
+                : undefined
+            }
             vide={{
               icone: 'telephone',
               titre: 'Aucun appareil',
@@ -190,6 +222,19 @@ export function Appareils({ parametre }: { parametre?: string | null }) {
           onChanger={setOffset}
         />
       </Carte>
+
+      {action ? (
+        <ActionGroupee
+          mode={action}
+          ids={[...choisis]}
+          onFermer={() => setAction(null)}
+          onFait={() => {
+            setAction(null);
+            setChoisis(new Set());
+            etat.recharger();
+          }}
+        />
+      ) : null}
 
       {ouvert ? (
         <FicheAppareil
@@ -410,5 +455,138 @@ function Donnee({ libelle, valeur }: { libelle: string; valeur: React.ReactNode 
       <p className="text-xs text-encre-500">{libelle}</p>
       <div className="text-encre-900">{valeur}</div>
     </div>
+  );
+}
+
+/**
+ * Action groupée sur une sélection d'appareils.
+ *
+ * DEUX GESTES, et ils ne se valent pas :
+ *
+ *  - SORTIR DU STOCK écrit un mouvement et conserve l'appareil : c'est ce
+ *    qu'on fait pour une perte, une casse, un appareil bloqué. L'histoire de
+ *    l'IMEI reste consultable, et l'appareil peut revenir par une correction.
+ *
+ *  - SUPPRIMER efface pour de bon, et n'est possible que sur un appareil qui
+ *    n'a JAMAIS bougé — un IMEI mal recopié qu'on retire dans la minute.
+ *    Laisser la fiche fantôme empêcherait de ressaisir le bon numéro, l'IMEI
+ *    restant pris.
+ */
+function ActionGroupee({
+  mode,
+  ids,
+  onFermer,
+  onFait,
+}: {
+  mode: 'sortie' | 'suppression';
+  ids: string[];
+  onFermer: () => void;
+  onFait: () => void;
+}) {
+  const contexte = useContexte();
+  const { notifier } = useNotifications();
+  const [statut, setStatut] = useState<'LOST' | 'DEFECTIVE' | 'BLOCKED'>('LOST');
+  const [motif, setMotif] = useState('');
+  const [occupe, setOccupe] = useState(false);
+  const [refus, setRefus] = useState<{ identifier: string; reason: string }[]>([]);
+
+  const executer = async () => {
+    setOccupe(true);
+    try {
+      const service = new StockService(contexte);
+      if (mode === 'sortie') {
+        const rapport = await service.writeOffMany(ids, statut, motif);
+        setRefus(rapport.failed.map((e) => ({ identifier: e.identifier, reason: e.reason })));
+        notifier(`${rapport.done} appareil(s) sortis du stock.`);
+        if (rapport.failed.length === 0) onFait();
+      } else {
+        const rapport = await service.deleteUntouched(ids);
+        setRefus(rapport.kept);
+        notifier(`${rapport.deleted} appareil(s) supprimés.`);
+        if (rapport.kept.length === 0) onFait();
+      }
+    } catch (cause) {
+      notifier(messageDe(cause), 'erreur');
+    } finally {
+      setOccupe(false);
+    }
+  };
+
+  return (
+    <Dialogue
+      ouvert
+      titre={
+        mode === 'sortie'
+          ? `Sortir ${ids.length} appareil${ids.length > 1 ? 's' : ''} du stock`
+          : `Supprimer ${ids.length} appareil${ids.length > 1 ? 's' : ''}`
+      }
+      onFermer={refus.length > 0 ? onFait : onFermer}
+      largeur="sm"
+      pied={
+        refus.length > 0 ? (
+          <Bouton variante="principal" onClick={onFait}>
+            Fermer
+          </Bouton>
+        ) : (
+          <>
+            <Bouton onClick={onFermer} disabled={occupe}>
+              Annuler
+            </Bouton>
+            <Bouton
+              variante="danger"
+              occupe={occupe}
+              disabled={mode === 'sortie' && motif.trim() === ''}
+              onClick={() => void executer()}
+            >
+              {mode === 'sortie' ? 'Sortir du stock' : 'Supprimer'}
+            </Bouton>
+          </>
+        )
+      }
+    >
+      {refus.length > 0 ? (
+        <div className="space-y-3">
+          <Erreur message={`${refus.length} appareil(s) conservés.`} />
+          <ul className="max-h-64 list-disc space-y-0.5 overflow-auto pl-5 text-sm text-encre-700">
+            {refus.map((ligne) => (
+              <li key={ligne.identifier}>
+                <span className="mono">{ligne.identifier}</span> — {ligne.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : mode === 'sortie' ? (
+        <div className="space-y-3">
+          <Information>
+            Les appareils quittent le stock vendable, sans disparaître : leur historique reste
+            consultable, et une correction peut les y remettre.
+          </Information>
+          <Liste
+            label="Nouveau statut"
+            value={statut}
+            onChange={(e) => setStatut(e.target.value as 'LOST' | 'DEFECTIVE' | 'BLOCKED')}
+            options={[
+              { valeur: 'LOST', libelle: 'Perdus' },
+              { valeur: 'DEFECTIVE', libelle: 'Défectueux' },
+              { valeur: 'BLOCKED', libelle: 'Bloqués' },
+            ]}
+          />
+          <ZoneTexte
+            label="Motif"
+            requis
+            value={motif}
+            onChange={(e) => setMotif(e.target.value)}
+            aide="Il figurera sur chaque mouvement et dans le journal d'audit."
+          />
+        </div>
+      ) : (
+        <Information>
+          Seuls les appareils qui n'ont <strong>jamais bougé</strong> seront effacés — entrés en
+          stock, et rien de plus. Ceux qui ont été vendus, transférés ou corrigés sont conservés, et
+          vous serez informé de la liste. C'est le geste pour retirer un IMEI mal saisi, dont le
+          numéro doit redevenir disponible.
+        </Information>
+      )}
+    </Dialogue>
   );
 }
