@@ -1,0 +1,268 @@
+@import 'tailwindcss';
+
+/* ============================================================================
+   Système visuel.
+
+   CONTEXTE D'USAGE : un poste de comptoir, souvent modeste, utilisé huit heures
+   par jour par quelqu'un qui connaît le logiciel par cœur. Trois conséquences,
+   qui priment sur l'esthétique :
+
+     1. DENSITÉ. Un tableau doit montrer vingt lignes, pas six. L'espace se
+        gagne sur les marges, jamais sur la lisibilité des chiffres.
+     2. CHIFFRES ALIGNÉS. Tous les montants et quantités sont en chiffres
+        tabulaires : une colonne de prix qui ne s'aligne pas se relit deux fois.
+     3. AUCUNE ANIMATION QUI RETARDE UNE ACTION. Les transitions ne portent que
+        sur la couleur et l'ombre, jamais sur la position ni la taille.
+
+   Les couleurs sont en OKLCH : à luminosité égale, les teintes le sont
+   vraiment. Les familles partagent la MÊME échelle, si bien qu'un `succes-600`
+   et un `marque-600` pèsent pareil à l'œil et s'échangent sans redessiner.
+
+   AUCUNE POLICE N'EST TÉLÉCHARGÉE : l'application travaille hors ligne, une
+   police servie par un CDN s'afficherait en Times ou pas du tout.
+   ============================================================================ */
+
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', 'Roboto Mono', monospace;
+
+  /* ─── Bleu de marque : les actions principales, et rien d'autre ────────── */
+  --color-marque-50: oklch(0.97 0.015 274);
+  --color-marque-100: oklch(0.94 0.035 274);
+  --color-marque-200: oklch(0.88 0.065 274);
+  --color-marque-300: oklch(0.79 0.1 274);
+  --color-marque-400: oklch(0.68 0.14 274);
+  --color-marque-500: oklch(0.58 0.16 274);
+  --color-marque-600: oklch(0.5 0.16 274);
+  --color-marque-700: oklch(0.42 0.14 274);
+  --color-marque-800: oklch(0.34 0.11 274);
+  --color-marque-900: oklch(0.27 0.08 274);
+
+  /* ─── Encre et surfaces ───────────────────────────────────────────────────
+     Un gris très légèrement bleuté. C'est LE gris du logiciel ; deux gris
+     presque identiques sont pires que deux gris franchement différents —
+     l'œil perçoit un décalage qu'il ne sait pas nommer. */
+  --color-encre-50: oklch(0.985 0.002 274);
+  --color-encre-100: oklch(0.965 0.004 274);
+  --color-encre-200: oklch(0.925 0.006 274);
+  --color-encre-300: oklch(0.865 0.008 274);
+  --color-encre-400: oklch(0.71 0.012 274);
+  --color-encre-500: oklch(0.58 0.014 274);
+  --color-encre-600: oklch(0.47 0.014 274);
+  --color-encre-700: oklch(0.38 0.013 274);
+  --color-encre-800: oklch(0.28 0.011 274);
+  --color-encre-900: oklch(0.2 0.009 274);
+  --color-encre-950: oklch(0.145 0.008 274);
+
+  /* ─── Vert : ce qui est réussi, encaissé, en stock ────────────────────── */
+  --color-succes-50: oklch(0.97 0.02 155);
+  --color-succes-100: oklch(0.94 0.045 155);
+  --color-succes-200: oklch(0.88 0.08 155);
+  --color-succes-500: oklch(0.62 0.14 155);
+  --color-succes-600: oklch(0.53 0.13 155);
+  --color-succes-700: oklch(0.44 0.11 155);
+  --color-succes-900: oklch(0.28 0.07 155);
+
+  /* ─── Ambre : ce qui attend, ce qui alerte sans être grave ────────────── */
+  --color-alerte-50: oklch(0.97 0.03 80);
+  --color-alerte-100: oklch(0.94 0.06 80);
+  --color-alerte-200: oklch(0.89 0.1 80);
+  --color-alerte-500: oklch(0.75 0.15 70);
+  --color-alerte-600: oklch(0.65 0.15 65);
+  --color-alerte-700: oklch(0.53 0.13 60);
+  --color-alerte-900: oklch(0.33 0.08 60);
+
+  /* ─── Rouge : ce qui est refusé, perdu, supprimé ──────────────────────── */
+  --color-danger-50: oklch(0.97 0.02 22);
+  --color-danger-100: oklch(0.94 0.04 22);
+  --color-danger-200: oklch(0.88 0.08 22);
+  --color-danger-500: oklch(0.63 0.2 22);
+  --color-danger-600: oklch(0.55 0.2 22);
+  --color-danger-700: oklch(0.46 0.17 22);
+  --color-danger-900: oklch(0.3 0.1 22);
+
+  /* ─── Rayons et ombres ────────────────────────────────────────────────────
+     Des ombres très basses : un logiciel de gestion n'est pas une application
+     mobile, et des cartes flottantes fatiguent au bout d'une heure. */
+  --radius-card: 0.5rem;
+  --shadow-carte: 0 1px 2px oklch(0.2 0.01 274 / 0.06), 0 1px 1px oklch(0.2 0.01 274 / 0.04);
+  --shadow-flottant: 0 8px 24px oklch(0.2 0.01 274 / 0.12), 0 2px 6px oklch(0.2 0.01 274 / 0.08);
+}
+
+/* ─── Base ────────────────────────────────────────────────────────────────── */
+@layer base {
+  * {
+    border-color: var(--color-encre-200);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--color-encre-100);
+    color: var(--color-encre-900);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    /* La WebView ne doit pas proposer de sélectionner l'interface elle-même :
+       un glissement de souris qui surligne la moitié d'un écran est un défaut
+       visible que personne ne signale mais que tout le monde remarque. */
+    user-select: none;
+  }
+
+  /* La sélection reste possible là où elle sert : contenus, champs, tableaux. */
+  input,
+  textarea,
+  [data-selectable],
+  td,
+  code {
+    user-select: text;
+  }
+
+  /* Chiffres tabulaires PARTOUT : montants, quantités, IMEI, dates. */
+  table,
+  input[type='number'],
+  [data-nombre] {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  h1 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  h2 {
+    font-size: 1rem;
+    font-weight: 600;
+  }
+  h3 {
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  /* Un anneau de focus VISIBLE : l'application se pilote au clavier au comptoir. */
+  :focus-visible {
+    outline: 2px solid var(--color-marque-500);
+    outline-offset: 1px;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-encre-300);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-encre-400);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* ─── Motifs réutilisés ───────────────────────────────────────────────────── */
+@layer components {
+  .carte {
+    background: white;
+    border: 1px solid var(--color-encre-200);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-carte);
+  }
+
+  /* Tableau de gestion : dense, lignes fines, en-tête collant.
+     L'en-tête reste visible au défilement — sans quoi on ne sait plus quelle
+     colonne on lit dès la trentième ligne. */
+  .tableau {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.8125rem;
+  }
+  .tableau thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--color-encre-50);
+    border-bottom: 1px solid var(--color-encre-200);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-encre-600);
+    white-space: nowrap;
+  }
+  .tableau tbody td {
+    padding: 0.4375rem 0.75rem;
+    border-bottom: 1px solid var(--color-encre-100);
+    vertical-align: middle;
+  }
+  .tableau tbody tr:hover td {
+    background: var(--color-marque-50);
+  }
+  .tableau tbody tr[data-clickable]:hover {
+    cursor: pointer;
+  }
+  .tableau .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* Identifiants techniques : IMEI, numéros de série, numéros de documents. */
+  .mono {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    letter-spacing: -0.01em;
+  }
+}
+
+/* ─── Impression ──────────────────────────────────────────────────────────
+   Les tickets et les factures s'impriment depuis la WebView. Tout ce qui n'est
+   pas le document est masqué, et le document reprend la pleine page : sans
+   cela, l'imprimante sortirait la barre de navigation et les menus.
+
+   Les couleurs sont forcées en noir sur blanc : une imprimante thermique de
+   comptoir ne connaît que ces deux-là, et un gris clair y devient invisible. */
+@media print {
+  body {
+    background: white;
+  }
+  body * {
+    visibility: hidden;
+  }
+  #zone-impression,
+  #zone-impression * {
+    visibility: visible;
+    color: black !important;
+    background: white !important;
+    border-color: #999 !important;
+  }
+  #zone-impression {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+  .sans-impression {
+    display: none !important;
+  }
+  @page {
+    margin: 10mm;
+  }
+}
