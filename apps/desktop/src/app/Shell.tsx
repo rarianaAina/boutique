@@ -30,7 +30,9 @@ export function Shell() {
     () =>
       NAVIGATION.map((groupe) => ({
         ...groupe,
-        ecrans: groupe.ecrans.filter((entree) => !entree.permission || peut(entree.permission)),
+        // Une entrée interdite est ABSENTE, pas grisée : un vendeur n'a pas à
+        // voir la liste de ce qu'il ne peut pas faire.
+        ecrans: groupe.ecrans.filter((entree) => peut(entree.permission)),
       })).filter((groupe) => groupe.ecrans.length > 0),
     [peut],
   );

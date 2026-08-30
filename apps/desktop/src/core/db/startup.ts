@@ -1,5 +1,11 @@
-import { nowIso, variantGroupKey } from '@boutique/shared';
+import {
+  derivePagesFromActions,
+  isPagePermission,
+  nowIso,
+  variantGroupKey,
+} from '@boutique/shared';
 import { ProductRepository } from './repositories/product.repository';
+import { RoleRepository } from './repositories/role.repository';
 import { META_KEYS, MetaRepository } from './repositories/meta.repository';
 import { OutboxRepository } from './repositories/outbox.repository';
 import type { SqlExecutor } from './client';
@@ -16,6 +22,7 @@ import type { SqlExecutor } from './client';
 export interface StartupReport {
   searchKeysRepaired: number;
   variantGroupsRepaired: number;
+  rolesUpgraded: number;
   outboxPurged: boolean;
   problems: string[];
 }
@@ -27,6 +34,7 @@ export async function runStartupMaintenance(db: SqlExecutor): Promise<StartupRep
   const report: StartupReport = {
     searchKeysRepaired: 0,
     variantGroupsRepaired: 0,
+    rolesUpgraded: 0,
     outboxPurged: false,
     problems: [],
   };
@@ -42,6 +50,15 @@ export async function runStartupMaintenance(db: SqlExecutor): Promise<StartupRep
     }
   } catch (cause) {
     report.problems.push(`Index de recherche : ${describe(cause)}`);
+  }
+
+  try {
+    // Les rôles créés avant l'arrivée des permissions de page n'en ont aucune :
+    // sans ce rattrapage, leurs utilisateurs verraient un menu VIDE après mise
+    // à jour, et l'application paraîtrait cassée.
+    report.rolesUpgraded = await grantMissingPagePermissions(db);
+  } catch (cause) {
+    report.problems.push(`Accès aux pages : ${describe(cause)}`);
   }
 
   try {
@@ -63,6 +80,24 @@ export async function runStartupMaintenance(db: SqlExecutor): Promise<StartupRep
   }
 
   return report;
+}
+
+async function grantMissingPagePermissions(db: SqlExecutor): Promise<number> {
+  const roles = await new RoleRepository(db).list();
+  const aRattraper = roles.filter(
+    (role) => !role.permissions.some((permission) => isPagePermission(permission)),
+  );
+  if (aRattraper.length === 0) return 0;
+
+  for (const role of aRattraper) {
+    // Les pages sont DÉDUITES des droits d'action déjà accordés : un rôle qui
+    // pouvait encaisser retrouve la caisse, un rôle qui ne le pouvait pas ne la
+    // gagne pas au passage.
+    await new RoleRepository(db).update(role.id, {
+      permissions: [...role.permissions, ...derivePagesFromActions(role.permissions)],
+    });
+  }
+  return aRattraper.length;
 }
 
 async function repairVariantGroups(db: SqlExecutor): Promise<number> {

@@ -1,11 +1,19 @@
 import { useState } from 'react';
-import { PERMISSION_GROUPS, PERMISSION_LABELS, USER_STATUS } from '@boutique/shared';
+import {
+  ALL_PAGE_PERMISSIONS,
+  PAGE_GROUPS,
+  PAGE_LABELS,
+  PERMISSION_GROUPS,
+  PERMISSION_LABELS,
+  USER_STATUS,
+  isPagePermission,
+} from '@boutique/shared';
 import type { Permission, UserStatus } from '@boutique/shared';
 import { UserRepository } from '@/core/db/repositories/user.repository';
 import { RoleRepository } from '@/core/db/repositories/role.repository';
 import { ShopRepository } from '@/core/db/repositories/shop.repository';
 import { UserService } from '@/core/services/auth.service';
-import { Carte, EnTetePage, Erreur, Information } from '@/components/ui/Page';
+import { Carte, Chargement, EnTetePage, Erreur, Information } from '@/components/ui/Page';
 import { Badge } from '@/components/ui/Badge';
 import { Bouton } from '@/components/ui/Bouton';
 import { Dialogue } from '@/components/ui/Dialogue';
@@ -311,6 +319,22 @@ function FormulaireUtilisateur({
   );
 }
 
+/**
+ * Édition d'un rôle.
+ *
+ * DEUX RÉGLAGES DISTINCTS, et les confondre finit toujours mal :
+ *
+ *  - les PAGES qu'un rôle peut ouvrir ;
+ *  - les ACTIONS qu'il peut y accomplir.
+ *
+ * Un comptable doit pouvoir consulter les achats sans jamais en réceptionner ;
+ * un responsable stock doit réceptionner sans voir la page des utilisateurs.
+ * Avec une seule permission par domaine, l'un des deux cas serait impossible.
+ *
+ * L'écran garde donc les deux listes côte à côte, et signale les incohérences
+ * plutôt que de les corriger en douce : ouvrir la caisse sans le droit
+ * d'encaisser donne une page inutilisable, et c'est à un humain de trancher.
+ */
 function FormulaireRole({
   roleId,
   onFermer,
@@ -323,6 +347,7 @@ function FormulaireRole({
   const { db } = useSession();
   const { notifier } = useNotifications();
   const [choisies, setChoisies] = useState<Set<Permission> | null>(null);
+  const [onglet, setOnglet] = useState<'pages' | 'actions'>('pages');
   const [occupe, setOccupe] = useState(false);
 
   const role = useChargement(
@@ -339,12 +364,23 @@ function FormulaireRole({
     setChoisies(suite);
   };
 
+  const basculerGroupe = (permissions: Permission[], activer: boolean) => {
+    const suite = new Set(actives);
+    for (const permission of permissions) {
+      if (activer) suite.add(permission);
+      else suite.delete(permission);
+    }
+    setChoisies(suite);
+  };
+
   const enregistrer = async () => {
     if (!db) return;
     setOccupe(true);
     try {
       await new RoleRepository(db).update(roleId, { permissions: [...actives] });
-      notifier('Permissions du rôle enregistrées.');
+      notifier(
+        'Rôle enregistré. Les utilisateurs concernés verront le changement à leur prochaine connexion.',
+      );
       onEnregistre();
     } catch (cause) {
       notifier(messageDe(cause), 'erreur');
@@ -352,6 +388,9 @@ function FormulaireRole({
       setOccupe(false);
     }
   };
+
+  const pagesActives = [...actives].filter((permission) => isPagePermission(permission));
+  const actionsActives = [...actives].filter((permission) => !isPagePermission(permission));
 
   return (
     <Dialogue
@@ -361,6 +400,9 @@ function FormulaireRole({
       largeur="lg"
       pied={
         <>
+          <span className="mr-auto text-xs text-encre-500">
+            {pagesActives.length} page(s) · {actionsActives.length} action(s)
+          </span>
           <Bouton onClick={onFermer} disabled={occupe}>
             Annuler
           </Bouton>
@@ -372,25 +414,98 @@ function FormulaireRole({
     >
       <div className="space-y-4">
         <Information>
-          Ces permissions s'appliquent à tous les comptes portant ce rôle. Elles sont vérifiées à
-          l'écran ET dans la couche métier : masquer un bouton ne suffit pas à protéger une donnée.
+          L'accès à une page et le droit d'y agir sont deux réglages distincts. Un rôle peut
+          consulter les achats sans pouvoir réceptionner, ou tenir la caisse sans voir les marges.
         </Information>
 
-        {PERMISSION_GROUPS.map((groupe) => (
-          <div key={groupe.title}>
-            <h3 className="mb-1 text-encre-800">{groupe.title}</h3>
-            <div className="grid grid-cols-2 gap-x-4">
-              {groupe.permissions.map((permission) => (
-                <Case
-                  key={permission}
-                  label={PERMISSION_LABELS[permission]}
-                  checked={actives.has(permission)}
-                  onChange={() => basculer(permission)}
-                />
-              ))}
-            </div>
+        <div className="flex gap-1 border-b border-encre-200">
+          {(
+            [
+              [
+                'pages',
+                `Pages accessibles (${pagesActives.length}/${ALL_PAGE_PERMISSIONS.length})`,
+              ],
+              ['actions', `Actions autorisées (${actionsActives.length})`],
+            ] as const
+          ).map(([cle, libelle]) => (
+            <button
+              key={cle}
+              type="button"
+              onClick={() => setOnglet(cle)}
+              className={`border-b-2 px-3 py-1.5 text-sm ${
+                onglet === cle
+                  ? 'border-marque-600 font-medium text-marque-700'
+                  : 'border-transparent text-encre-600 hover:text-encre-900'
+              }`}
+            >
+              {libelle}
+            </button>
+          ))}
+        </div>
+
+        {role.chargement ? (
+          <Chargement />
+        ) : onglet === 'pages' ? (
+          <div className="space-y-3">
+            {PAGE_GROUPS.map((groupe) => {
+              const toutes = groupe.pages.every((page) => actives.has(page));
+              return (
+                <div key={groupe.title}>
+                  <div className="mb-0.5 flex items-center justify-between">
+                    <h3 className="text-encre-800">{groupe.title}</h3>
+                    <Bouton
+                      taille="petit"
+                      variante="discret"
+                      onClick={() => basculerGroupe(groupe.pages, !toutes)}
+                    >
+                      {toutes ? 'Tout retirer' : 'Tout ouvrir'}
+                    </Bouton>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4">
+                    {groupe.pages.map((page) => (
+                      <Case
+                        key={page}
+                        label={PAGE_LABELS[page]}
+                        checked={actives.has(page)}
+                        onChange={() => basculer(page)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        ))}
+        ) : (
+          <div className="space-y-3">
+            {PERMISSION_GROUPS.map((groupe) => {
+              const toutes = groupe.permissions.every((permission) => actives.has(permission));
+              return (
+                <div key={groupe.title}>
+                  <div className="mb-0.5 flex items-center justify-between">
+                    <h3 className="text-encre-800">{groupe.title}</h3>
+                    <Bouton
+                      taille="petit"
+                      variante="discret"
+                      onClick={() => basculerGroupe(groupe.permissions, !toutes)}
+                    >
+                      {toutes ? 'Tout retirer' : 'Tout accorder'}
+                    </Bouton>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4">
+                    {groupe.permissions.map((permission) => (
+                      <Case
+                        key={permission}
+                        label={PERMISSION_LABELS[permission]}
+                        checked={actives.has(permission)}
+                        onChange={() => basculer(permission)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </Dialogue>
   );

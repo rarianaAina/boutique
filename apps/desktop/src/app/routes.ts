@@ -1,5 +1,5 @@
-import { PERMISSIONS } from '@boutique/shared';
-import type { Permission } from '@boutique/shared';
+import { PAGE_PERMISSIONS } from '@boutique/shared';
+import type { PagePermission } from '@boutique/shared';
 import type { NomIcone } from '@/components/ui/Icone';
 
 /**
@@ -33,14 +33,23 @@ export type CleEcran =
   | 'parametres'
   | 'synchronisation'
   | 'import'
-  | 'journal';
+  | 'journal'
+  | 'boutiques'
+  | 'prix';
 
 export interface Ecran {
   cle: CleEcran;
   titre: string;
   icone: NomIcone;
-  /** Permission minimale. Absente : accessible à toute session ouverte. */
-  permission?: Permission;
+  /**
+   * Permission d'ACCÈS à la page.
+   *
+   * Chaque écran a la sienne, sans exception : c'est ce qui permet de régler
+   * l'accès page par page pour chaque rôle. Les droits d'AGIR — encaisser,
+   * réceptionner, rembourser — sont des permissions distinctes, vérifiées à
+   * l'intérieur de l'écran.
+   */
+  permission: PagePermission;
   /** Raccourci clavier global, avec la touche Alt. */
   raccourci?: string;
 }
@@ -53,7 +62,15 @@ export interface Groupe {
 export const NAVIGATION: Groupe[] = [
   {
     titre: '',
-    ecrans: [{ cle: 'tableau', titre: 'Tableau de bord', icone: 'tableau', raccourci: '1' }],
+    ecrans: [
+      {
+        cle: 'tableau',
+        titre: 'Tableau de bord',
+        icone: 'tableau',
+        permission: PAGE_PERMISSIONS.tableau,
+        raccourci: '1',
+      },
+    ],
   },
   {
     titre: 'Ventes',
@@ -62,27 +79,33 @@ export const NAVIGATION: Groupe[] = [
         cle: 'caisse',
         titre: 'Nouvelle vente',
         icone: 'caisse',
-        permission: PERMISSIONS.saleCreate,
+        permission: PAGE_PERMISSIONS.caisse,
         raccourci: '2',
       },
-      { cle: 'tickets', titre: 'Tickets', icone: 'ticket', raccourci: '3' },
+      {
+        cle: 'tickets',
+        titre: 'Tickets',
+        icone: 'ticket',
+        permission: PAGE_PERMISSIONS.tickets,
+        raccourci: '3',
+      },
       {
         cle: 'factures',
         titre: 'Factures',
         icone: 'facture',
-        permission: PERMISSIONS.invoiceManage,
+        permission: PAGE_PERMISSIONS.factures,
       },
       {
         cle: 'remboursements',
         titre: 'Remboursements',
         icone: 'retour',
-        permission: PERMISSIONS.refundCreate,
+        permission: PAGE_PERMISSIONS.remboursements,
       },
       {
         cle: 'echanges',
         titre: 'Échanges',
         icone: 'echange',
-        permission: PERMISSIONS.exchangeCreate,
+        permission: PAGE_PERMISSIONS.echanges,
       },
     ],
   },
@@ -93,33 +116,33 @@ export const NAVIGATION: Groupe[] = [
         cle: 'produits',
         titre: 'Produits',
         icone: 'boite',
-        permission: PERMISSIONS.productView,
+        permission: PAGE_PERMISSIONS.produits,
         raccourci: '4',
       },
       {
         cle: 'appareils',
         titre: 'IMEI / Séries',
         icone: 'telephone',
-        permission: PERMISSIONS.stockView,
+        permission: PAGE_PERMISSIONS.appareils,
         raccourci: '5',
       },
       {
         cle: 'mouvements',
         titre: 'Mouvements',
         icone: 'mouvement',
-        permission: PERMISSIONS.stockView,
+        permission: PAGE_PERMISSIONS.mouvements,
       },
       {
         cle: 'inventaire',
         titre: 'Inventaire',
         icone: 'inventaire',
-        permission: PERMISSIONS.inventoryManage,
+        permission: PAGE_PERMISSIONS.inventaire,
       },
       {
         cle: 'stock-faible',
         titre: 'Stock faible',
         icone: 'alerte',
-        permission: PERMISSIONS.stockView,
+        permission: PAGE_PERMISSIONS['stock-faible'],
       },
     ],
   },
@@ -130,13 +153,13 @@ export const NAVIGATION: Groupe[] = [
         cle: 'fournisseurs',
         titre: 'Fournisseurs',
         icone: 'fournisseur',
-        permission: PERMISSIONS.purchaseView,
+        permission: PAGE_PERMISSIONS.fournisseurs,
       },
       {
         cle: 'achats',
         titre: 'Commandes et réceptions',
         icone: 'achat',
-        permission: PERMISSIONS.purchaseView,
+        permission: PAGE_PERMISSIONS.achats,
       },
     ],
   },
@@ -147,39 +170,66 @@ export const NAVIGATION: Groupe[] = [
         cle: 'transferts',
         titre: 'Transferts',
         icone: 'camion',
-        permission: PERMISSIONS.transferCreate,
+        permission: PAGE_PERMISSIONS.transferts,
       },
       {
         cle: 'synchronisation',
         titre: 'Synchronisation',
         icone: 'synchro',
-        permission: PERMISSIONS.syncRun,
+        permission: PAGE_PERMISSIONS.synchronisation,
       },
     ],
   },
   {
     titre: 'Gestion',
     ecrans: [
-      { cle: 'clients', titre: 'Clients', icone: 'client', permission: PERMISSIONS.customerView },
-      { cle: 'rapports', titre: 'Rapports', icone: 'rapport', permission: PERMISSIONS.reportView },
-      { cle: 'import', titre: 'Import Excel', icone: 'import', permission: PERMISSIONS.importRun },
+      {
+        cle: 'clients',
+        titre: 'Clients',
+        icone: 'client',
+        permission: PAGE_PERMISSIONS.clients,
+      },
+      {
+        cle: 'rapports',
+        titre: 'Rapports',
+        icone: 'rapport',
+        permission: PAGE_PERMISSIONS.rapports,
+      },
+      {
+        cle: 'prix',
+        titre: 'Évolution des prix',
+        icone: 'mouvement',
+        permission: PAGE_PERMISSIONS.prix,
+      },
+      {
+        cle: 'import',
+        titre: 'Import Excel',
+        icone: 'import',
+        permission: PAGE_PERMISSIONS.import,
+      },
       {
         cle: 'journal',
         titre: "Journal d'audit",
         icone: 'info',
-        permission: PERMISSIONS.auditView,
+        permission: PAGE_PERMISSIONS.journal,
+      },
+      {
+        cle: 'boutiques',
+        titre: 'Boutiques',
+        icone: 'fournisseur',
+        permission: PAGE_PERMISSIONS.boutiques,
       },
       {
         cle: 'utilisateurs',
         titre: 'Utilisateurs',
         icone: 'utilisateur',
-        permission: PERMISSIONS.userManage,
+        permission: PAGE_PERMISSIONS.utilisateurs,
       },
       {
         cle: 'parametres',
         titre: 'Paramètres',
         icone: 'reglage',
-        permission: PERMISSIONS.settingsManage,
+        permission: PAGE_PERMISSIONS.parametres,
       },
     ],
   },

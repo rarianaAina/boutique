@@ -54,6 +54,8 @@ const Journal = lazy(() => import('./gestion/Journal').then((m) => ({ default: m
 const Utilisateurs = lazy(() =>
   import('./gestion/Utilisateurs').then((m) => ({ default: m.Utilisateurs })),
 );
+const Boutiques = lazy(() => import('./gestion/Boutiques').then((m) => ({ default: m.Boutiques })));
+const Prix = lazy(() => import('./gestion/Prix').then((m) => ({ default: m.Prix })));
 const Parametres = lazy(() =>
   import('./gestion/Parametres').then((m) => ({ default: m.Parametres })),
 );
@@ -63,7 +65,10 @@ export function EcranCourant({ cle }: { cle: CleEcran }) {
   const { peut } = useSession();
   const description = ecranParCle(cle);
 
-  if (description?.permission && !peut(description.permission)) {
+  // La permission d'ACCÈS est revérifiée ici, et pas seulement dans le menu :
+  // un écran atteint par un autre chemin — la recherche globale, un lien depuis
+  // une fiche — doit être refusé de la même façon.
+  if (description && !peut(description.permission)) {
     return (
       <Vide
         icone="alerte"
@@ -122,6 +127,10 @@ function Ecran({ cle, parametre }: { cle: CleEcran; parametre: string | null }) 
       return <Journal />;
     case 'utilisateurs':
       return <Utilisateurs />;
+    case 'boutiques':
+      return <Boutiques />;
+    case 'prix':
+      return <Prix />;
     case 'parametres':
       return <Parametres />;
     default:
