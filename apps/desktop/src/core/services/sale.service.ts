@@ -22,6 +22,7 @@ import { OutboxRepository } from '../db/repositories/outbox.repository';
 import { AUDIT_ACTIONS } from '../db/repositories/audit.repository';
 import { AuditService } from './audit.service';
 import { BusinessError, assertCan, mayNot, type AppContext } from './context';
+import { fifoUnitCost } from './cost.service';
 
 /**
  * Encaissement (§12).
@@ -354,6 +355,21 @@ export class SaleService {
         requestedQuantities.set(product.id, total);
         await this.assertQuantityAvailable(product, total, position);
 
+        // Le coût d'une sortie non identifiable relève d'une CONVENTION : prix
+        // catalogue, ou couches consommées dans l'ordre d'arrivée. Un appareil
+        // identifié, lui, porte son propre coût — il n'a besoin d'aucune
+        // convention, et n'en emploie aucune.
+        const unitCost =
+          this.context.settings.costMethod === 'FIFO'
+            ? await fifoUnitCost(
+                this.context.db,
+                product.id,
+                this.context.shopId,
+                line.quantity,
+                product.purchasePrice,
+              )
+            : product.purchasePrice;
+
         resolved.push({
           product,
           unit: null,
@@ -363,7 +379,7 @@ export class SaleService {
           unitPrice,
           discount,
           taxRate: this.context.settings.taxEnabled ? product.taxRate : null,
-          unitCost: product.purchasePrice,
+          unitCost,
         });
         continue;
       }

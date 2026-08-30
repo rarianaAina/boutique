@@ -1,5 +1,6 @@
 import { DEFAULT_CURRENCY, DEFAULT_NUMBERING, nowIso } from '@boutique/shared';
 import type { CurrencyFormat, NumberingRule } from '@boutique/shared';
+import type { CostMethod } from '../../services/cost.service';
 import { parseJson, toJson } from '../rows';
 import type { SqlExecutor } from '../client';
 
@@ -21,6 +22,7 @@ export const SETTING_KEYS = {
   lowStockThreshold: 'stock.low_threshold',
   allowNegativeStock: 'stock.allow_negative',
   strictImeiChecksum: 'stock.strict_imei',
+  costMethod: 'stock.cost_method',
   backupKeep: 'backup.keep',
   backupDaily: 'backup.daily',
   syncServerUrl: 'sync.server_url',
@@ -54,6 +56,16 @@ export interface ShopSettings {
    * l'unicité, elles, restent contrôlées dans tous les cas.
    */
   strictImeiChecksum: boolean;
+  /**
+   * Valorisation des sorties de stock des produits suivis par QUANTITÉ.
+   *
+   * Les produits suivis à l'unité ne sont pas concernés : chaque appareil
+   * porte son propre coût, ce qui est plus exact que toute convention.
+   *
+   * `CATALOGUE` par défaut — basculer une base existante en FIFO changerait la
+   * lecture des marges à venir, et cela ne doit pas arriver sans décision.
+   */
+  costMethod: CostMethod;
   backupKeep: number;
   backupDaily: boolean;
   syncServerUrl: string;
@@ -70,6 +82,7 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   lowStockThreshold: 3,
   allowNegativeStock: false,
   strictImeiChecksum: true,
+  costMethod: 'CATALOGUE',
   backupKeep: 14,
   backupDaily: true,
   syncServerUrl: '',
@@ -122,6 +135,7 @@ export class SettingRepository {
         SETTING_KEYS.strictImeiChecksum,
         DEFAULT_SETTINGS.strictImeiChecksum,
       ),
+      costMethod: read(SETTING_KEYS.costMethod, DEFAULT_SETTINGS.costMethod),
       backupKeep: read(SETTING_KEYS.backupKeep, DEFAULT_SETTINGS.backupKeep),
       backupDaily: read(SETTING_KEYS.backupDaily, DEFAULT_SETTINGS.backupDaily),
       syncServerUrl: read(SETTING_KEYS.syncServerUrl, DEFAULT_SETTINGS.syncServerUrl),
