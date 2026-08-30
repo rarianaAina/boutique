@@ -1,0 +1,1262 @@
+# PROMPT — APPLICATION DE GESTION DE BOUTIQUE OFFLINE-FIRST
+
+Tu es un développeur logiciel senior spécialisé en applications de gestion commerciales, POS, inventaire, bases de données locales, architecture offline-first et synchronisation multi-sites.
+
+Je veux que tu développes une **application professionnelle complète de gestion de boutiques spécialisées dans la vente de smartphones, accessoires électroniques et matériel informatique**.
+
+L'application doit être pensée comme un véritable logiciel commercial pouvant être utilisé quotidiennement par plusieurs boutiques et plusieurs utilisateurs.
+
+---
+
+# 1. OBJECTIF PRINCIPAL
+
+L'application doit fonctionner **entièrement hors ligne par défaut**.
+
+Chaque boutique possède sa propre base de données locale et doit pouvoir continuer à fonctionner normalement sans connexion Internet.
+
+Internet ne doit être nécessaire que lorsqu'une opération nécessitant une communication entre plusieurs boutiques est demandée, notamment :
+
+* transfert de produits d'une boutique vers une autre ;
+* synchronisation de données explicitement demandée ;
+* éventuellement synchronisation administrative selon les besoins futurs.
+
+IMPORTANT :
+
+Ne construis PAS une application qui dépend constamment d'une API distante.
+
+Le fonctionnement principal doit être :
+
+**Utilisateur → Application locale → Base de données locale**
+
+et non :
+
+**Utilisateur → Internet → API → Base de données**
+
+L'application doit rester utilisable même avec une connexion Internet totalement absente.
+
+---
+
+# 2. CONTEXTE COMMERCIAL
+
+La boutique vend principalement :
+
+### Smartphones
+
+* iPhone
+* Samsung
+* Xiaomi
+* Redmi
+* Oppo
+* autres marques
+
+Chaque smartphone doit obligatoirement être identifié par son ou ses IMEI.
+
+Un smartphone peut avoir :
+
+* IMEI 1
+* IMEI 2
+* numéro de série
+* modèle
+* capacité
+* couleur
+* état
+* fournisseur
+* prix d'achat
+* prix de vente
+* localisation/boutique
+* statut
+
+Les IMEI doivent être considérés comme des identifiants critiques.
+
+Il doit être impossible d'avoir deux smartphones différents avec le même IMEI dans le même système.
+
+Prévoir également les smartphones Dual SIM.
+
+### Autres produits
+
+La boutique vend également :
+
+* micros ;
+* housses ;
+* caches-écrans ;
+* chargeurs ;
+* câbles ;
+* DJI Osmo ;
+* JBL Boombox ;
+* écouteurs ;
+* enceintes ;
+* accessoires ;
+* matériel informatique ;
+* autres produits électroniques.
+
+Ces produits peuvent être suivis :
+
+* par numéro de série lorsque nécessaire ;
+* par référence/SKU lorsque le suivi individuel n'est pas nécessaire ;
+* par quantité lorsqu'il s'agit de produits consommables ou non sérialisés.
+
+L'architecture doit donc supporter :
+
+**Produit sérialisé**
+→ chaque unité possède son propre numéro de série.
+
+**Produit IMEI**
+→ chaque smartphone possède obligatoirement son IMEI.
+
+**Produit non sérialisé**
+→ gestion par quantité.
+
+---
+
+# 3. ARCHITECTURE TECHNIQUE
+
+Avant d'écrire beaucoup de code, analyse le projet et propose une architecture cohérente.
+
+Privilégie une architecture moderne, robuste et maintenable.
+
+Si aucune stack n'est imposée par le projet existant, utilise de préférence :
+
+* TypeScript
+* React
+* une architecture desktop adaptée à une application offline-first
+* SQLite comme base locale
+* un ORM fiable pour SQLite
+* une couche de services séparée de l'interface
+* validation stricte des données
+* architecture modulaire
+
+L'application doit pouvoir évoluer vers :
+
+* plusieurs boutiques ;
+* plusieurs milliers de produits ;
+* plusieurs centaines de milliers de mouvements ;
+* plusieurs utilisateurs ;
+* synchronisation inter-boutiques ;
+* rapports avancés.
+
+Ne fais pas une simple application CRUD désorganisée.
+
+Sépare clairement :
+
+* UI
+* logique métier
+* repositories
+* services
+* base de données
+* synchronisation
+* authentification
+* permissions
+* imports
+* exports
+* audit/logging.
+
+---
+
+# 4. BASE DE DONNÉES
+
+Conçois d'abord le modèle de données.
+
+Les principales entités devraient inclure au minimum :
+
+### Boutiques
+
+* id
+* nom
+* adresse
+* téléphone
+* statut
+* paramètres
+
+### Utilisateurs
+
+* id
+* nom
+* email/login
+* mot de passe hashé
+* rôle
+* boutique
+* statut
+* date de création
+* dernière connexion
+
+### Rôles
+
+Prévoir un système de permissions suffisamment flexible.
+
+Exemples :
+
+* Administrateur
+* Gérant
+* Responsable stock
+* Vendeur
+* Caissier
+* Comptable
+* Responsable achats
+
+Les permissions doivent pouvoir contrôler notamment :
+
+* consulter les produits ;
+* créer une vente ;
+* modifier une vente ;
+* annuler une vente ;
+* effectuer un remboursement ;
+* effectuer un échange ;
+* consulter les coûts d'achat ;
+* créer un achat ;
+* modifier les fournisseurs ;
+* effectuer un transfert ;
+* valider une réception ;
+* consulter les rapports ;
+* gérer les utilisateurs ;
+* importer des fichiers ;
+* modifier les paramètres.
+
+Ne mets pas toutes les permissions en dur dans les composants React.
+
+---
+
+# 5. PRODUITS
+
+Créer un système de catalogue complet.
+
+Un produit doit pouvoir contenir :
+
+* ID
+* SKU
+* référence
+* code-barres
+* marque
+* modèle
+* catégorie
+* sous-catégorie
+* description
+* prix d'achat
+* prix de vente
+* prix minimum éventuellement
+* TVA éventuellement
+* fournisseur principal
+* unité
+* stock minimum
+* photo
+* statut
+
+Prévoir également les attributs spécifiques :
+
+* IMEI
+* numéro de série
+* capacité
+* RAM
+* couleur
+* état
+* autres caractéristiques
+
+Ne mélange pas les données génériques du produit avec les données d'une unité physique.
+
+Exemple :
+
+Produit :
+
+> iPhone 15 128GB Black
+
+Unités :
+
+> IMEI 123456...
+> IMEI 987654...
+
+Chaque unité doit avoir son propre état et son propre historique.
+
+---
+
+# 6. STOCK
+
+Créer un véritable système de gestion de stock.
+
+Chaque mouvement de stock doit être enregistré.
+
+Types de mouvements :
+
+* réception fournisseur ;
+* vente ;
+* retour client ;
+* remboursement ;
+* échange ;
+* transfert sortant ;
+* transfert entrant ;
+* correction de stock ;
+* inventaire ;
+* perte ;
+* casse ;
+* retour fournisseur.
+
+Ne jamais modifier simplement une quantité sans créer de mouvement lorsque l'opération nécessite une traçabilité.
+
+Pour les smartphones, l'historique doit permettre de savoir :
+
+* quand l'appareil est entré ;
+* de quel fournisseur il vient ;
+* dans quelle boutique il se trouve ;
+* quand il a été vendu ;
+* à quel ticket/facture il est associé ;
+* s'il a été retourné ;
+* s'il a été échangé ;
+* s'il a été transféré.
+
+---
+
+# 7. IMEI
+
+La gestion des IMEI est une fonctionnalité critique.
+
+Lors de l'entrée d'un smartphone :
+
+1. l'utilisateur sélectionne le produit ;
+2. saisit/scanne l'IMEI ;
+3. le système vérifie son format ;
+4. le système vérifie qu'il n'existe pas déjà ;
+5. le smartphone est créé comme unité physique ;
+6. l'entrée en stock est enregistrée.
+
+Prévoir également :
+
+* recherche par IMEI ;
+* recherche par numéro de série ;
+* recherche par SKU ;
+* scan code-barres/IMEI si matériel compatible ;
+* historique complet d'un IMEI ;
+* statut de l'appareil.
+
+Statuts possibles :
+
+* En stock
+* Réservé
+* Vendu
+* Transfert en cours
+* Transféré
+* Retourné
+* Échangé
+* Remboursé
+* Défectueux
+* Perdu
+* Bloqué
+
+---
+
+# 8. IMPORT EXCEL
+
+Le client possède déjà des fichiers Excel contenant les produits.
+
+Créer un module d'import professionnel.
+
+L'utilisateur doit pouvoir :
+
+1. sélectionner un fichier Excel ;
+2. choisir la feuille ;
+3. voir les colonnes détectées ;
+4. mapper les colonnes Excel vers les champs de l'application ;
+5. prévisualiser les données ;
+6. détecter les erreurs ;
+7. détecter les doublons ;
+8. détecter les IMEI invalides ;
+9. corriger les erreurs lorsque possible ;
+10. lancer l'import ;
+11. afficher un rapport final.
+
+Exemple :
+
+Excel :
+
+| Désignation | Marque | Référence | IMEI | Prix Achat | Prix Vente |
+| ----------- | ------ | --------- | ---- | ---------: | ---------: |
+
+Application :
+
+| name | brand | sku | imei | purchasePrice | salePrice |
+
+Le mapping ne doit pas être codé uniquement pour un fichier précis.
+
+L'importateur doit être suffisamment flexible pour supporter différents fichiers Excel du client.
+
+Prévoir :
+
+* import initial ;
+* import de nouveaux produits ;
+* mise à jour ;
+* gestion des doublons ;
+* journal des imports ;
+* possibilité d'annuler un import lorsque techniquement possible.
+
+IMPORTANT :
+
+Ne jamais écraser silencieusement des données existantes.
+
+---
+
+# 9. FOURNISSEURS
+
+Créer une gestion complète des fournisseurs.
+
+Informations :
+
+* nom
+* entreprise
+* téléphone
+* email
+* adresse
+* pays
+* conditions commerciales
+* notes
+* historique des achats
+
+Un fournisseur peut être associé à plusieurs produits.
+
+---
+
+# 10. ACHATS
+
+Créer un module de gestion des achats.
+
+Workflow :
+
+**Brouillon → Commandé → Réception partielle → Réception complète → Clôturé**
+
+Un achat doit pouvoir contenir :
+
+* fournisseur ;
+* référence fournisseur ;
+* date ;
+* produits ;
+* quantités ;
+* prix unitaires ;
+* remises ;
+* taxes ;
+* frais logistiques ;
+* frais supplémentaires ;
+* montant total ;
+* statut ;
+* notes.
+
+Lorsqu'une marchandise est réceptionnée :
+
+* le stock augmente ;
+* les unités sérialisées sont créées ;
+* les IMEI sont enregistrés ;
+* les numéros de série sont enregistrés ;
+* le mouvement de stock est créé.
+
+---
+
+# 11. COÛTS LOGISTIQUES
+
+Le logiciel doit permettre d'enregistrer les coûts liés à l'importation ou au transport :
+
+* transport ;
+* livraison ;
+* douane ;
+* assurance ;
+* manutention ;
+* autres coûts.
+
+Prévoir la possibilité de rattacher ces coûts à un achat.
+
+À terme, le système doit pouvoir calculer un coût réel d'acquisition :
+
+**Prix achat + coûts logistiques attribuables**
+
+L'architecture doit permettre une répartition des coûts sur les produits.
+
+---
+
+# 12. VENTES / TICKETS DE CAISSE
+
+Créer une interface POS moderne et rapide.
+
+Le vendeur doit pouvoir :
+
+* rechercher un produit ;
+* scanner un code-barres ;
+* rechercher un IMEI ;
+* ajouter une quantité ;
+* appliquer une remise selon ses permissions ;
+* sélectionner un client ;
+* choisir un mode de paiement ;
+* finaliser la vente ;
+* imprimer ou exporter le ticket.
+
+Modes de paiement configurables :
+
+* espèces ;
+* carte ;
+* virement ;
+* mobile money ;
+* autre.
+
+Le ticket doit contenir :
+
+* numéro ;
+* date ;
+* boutique ;
+* vendeur ;
+* produits ;
+* quantités ;
+* prix ;
+* remises ;
+* total ;
+* mode de paiement ;
+* informations client si disponibles.
+
+---
+
+# 13. FACTURES
+
+Créer une vraie gestion de factures.
+
+Une facture doit avoir :
+
+* numéro unique ;
+* date ;
+* client ;
+* boutique ;
+* lignes ;
+* quantités ;
+* prix ;
+* remises ;
+* taxes si activées ;
+* total ;
+* statut ;
+* mode de paiement.
+
+Statuts :
+
+* Brouillon
+* Émise
+* Payée
+* Partiellement payée
+* Annulée
+* Remboursée
+
+Prévoir génération PDF/impression.
+
+---
+
+# 14. CLIENTS
+
+Créer un module clients.
+
+Informations :
+
+* nom ;
+* prénom ;
+* téléphone ;
+* email ;
+* adresse ;
+* notes ;
+* historique des achats.
+
+L'historique client doit permettre de retrouver :
+
+* factures ;
+* tickets ;
+* remboursements ;
+* échanges ;
+* appareils achetés ;
+* IMEI associés.
+
+---
+
+# 15. ÉCHANGES DE SMARTPHONES
+
+Créer une fonctionnalité dédiée aux échanges.
+
+Exemple :
+
+Client rapporte :
+
+> iPhone A — IMEI X
+
+et reçoit :
+
+> iPhone B — IMEI Y
+
+Le système doit :
+
+1. retrouver la vente originale ;
+2. vérifier que l'IMEI correspond ;
+3. enregistrer le retour du premier appareil ;
+4. enregistrer l'entrée de l'appareil retourné dans le stock/statut approprié ;
+5. sortir le nouvel appareil ;
+6. calculer éventuellement une différence de prix ;
+7. créer un document d'échange ;
+8. conserver l'historique complet.
+
+Ne jamais supprimer l'ancienne vente.
+
+L'échange doit être une nouvelle opération liée à la vente originale.
+
+---
+
+# 16. REMBOURSEMENTS
+
+Créer une gestion complète des remboursements.
+
+Un remboursement doit être lié à une vente ou facture.
+
+Possibilités :
+
+* remboursement total ;
+* remboursement partiel ;
+* remboursement d'une ligne ;
+* retour produit ;
+* retour smartphone avec IMEI.
+
+Le système doit empêcher les remboursements supérieurs au montant réellement payé.
+
+Chaque remboursement doit être audité.
+
+---
+
+# 17. TRANSFERT ENTRE BOUTIQUES
+
+C'est l'une des fonctionnalités les plus importantes.
+
+Chaque boutique doit fonctionner localement.
+
+Exemple :
+
+Boutique A possède :
+
+> iPhone 15 — IMEI 123456
+
+Le responsable demande un transfert vers Boutique B.
+
+Workflow :
+
+### Boutique A
+
+Créer :
+
+**Transfert #TR-000123**
+
+* boutique source ;
+* boutique destination ;
+* produits ;
+* IMEI ;
+* quantité ;
+* utilisateur ;
+* date ;
+* statut.
+
+Statuts :
+
+* Brouillon
+* Demandé
+* Validé
+* Expédié
+* En transit
+* Reçu
+* Refusé
+* Annulé
+
+Lorsqu'un transfert inter-boutiques est nécessaire, une connexion Internet peut être utilisée pour communiquer avec le serveur de synchronisation.
+
+IMPORTANT :
+
+La vente normale ne doit PAS dépendre de cette connexion.
+
+---
+
+# 18. SYNCHRONISATION
+
+Conçois une véritable architecture de synchronisation.
+
+Ne fais pas simplement :
+
+> "envoyer toute la base SQLite au serveur".
+
+Il faut prévoir une synchronisation basée sur les événements/mouvements ou changements.
+
+Chaque modification importante doit pouvoir être représentée par un événement ou une opération synchronisable.
+
+Exemples :
+
+* PRODUCT_CREATED
+* STOCK_RECEIVED
+* STOCK_SOLD
+* STOCK_TRANSFER_REQUESTED
+* STOCK_TRANSFER_SHIPPED
+* STOCK_TRANSFER_RECEIVED
+* STOCK_RETURNED
+* PRODUCT_UPDATED
+
+Prévoir :
+
+* identifiant unique global des opérations ;
+* timestamp ;
+* boutique source ;
+* utilisateur ;
+* statut de synchronisation ;
+* retry ;
+* gestion des erreurs ;
+* idempotence ;
+* prévention des doublons ;
+* journal de synchronisation.
+
+La synchronisation doit être déclenchée explicitement lorsque nécessaire.
+
+Créer dans l'interface une zone permettant de voir :
+
+* dernière synchronisation ;
+* données en attente ;
+* erreurs ;
+* transferts ;
+* bouton "Synchroniser".
+
+---
+
+# 19. CONFLITS
+
+Prévoir les conflits.
+
+Exemple :
+
+Deux boutiques tentent de modifier la même donnée.
+
+L'architecture doit définir des règles claires.
+
+Pour les smartphones, l'IMEI doit être globalement unique.
+
+Un même appareil ne doit jamais pouvoir être vendu simultanément dans deux boutiques.
+
+La synchronisation doit donc prévoir des mécanismes de réservation/verrouillage ou de résolution de conflits.
+
+---
+
+# 20. AUTHENTIFICATION
+
+Créer une authentification locale sécurisée.
+
+* login ;
+* mot de passe hashé ;
+* session ;
+* déconnexion ;
+* changement de mot de passe ;
+* verrouillage éventuel ;
+* permissions.
+
+Les mots de passe ne doivent jamais être stockés en clair.
+
+---
+
+# 21. AUDIT LOG
+
+Créer un journal d'audit.
+
+Enregistrer notamment :
+
+* connexion ;
+* déconnexion ;
+* création ;
+* modification ;
+* suppression logique ;
+* vente ;
+* remboursement ;
+* échange ;
+* achat ;
+* réception ;
+* transfert ;
+* modification de prix ;
+* modification de stock ;
+* import Excel.
+
+Chaque événement doit contenir :
+
+* utilisateur ;
+* date/heure ;
+* boutique ;
+* action ;
+* entité ;
+* identifiant ;
+* ancienne valeur si pertinent ;
+* nouvelle valeur si pertinent.
+
+---
+
+# 22. RAPPORTS
+
+Créer un dashboard professionnel.
+
+Afficher notamment :
+
+* chiffre d'affaires ;
+* ventes du jour ;
+* ventes du mois ;
+* nombre de transactions ;
+* produits vendus ;
+* marge estimée ;
+* stock total ;
+* produits en stock faible ;
+* achats ;
+* remboursements ;
+* échanges ;
+* mouvements de stock.
+
+Prévoir des filtres :
+
+* période ;
+* boutique ;
+* vendeur ;
+* catégorie ;
+* produit ;
+* fournisseur.
+
+Créer également :
+
+### Rapport de ventes
+
+### Rapport de stock
+
+### Rapport de mouvements
+
+### Rapport de marge
+
+### Rapport d'achats
+
+### Rapport de remboursements
+
+### Rapport d'échanges
+
+### Rapport des transferts
+
+---
+
+# 23. RECHERCHE GLOBALE
+
+Créer une recherche globale rapide permettant de rechercher :
+
+* IMEI ;
+* numéro de série ;
+* SKU ;
+* code-barres ;
+* nom produit ;
+* client ;
+* numéro de facture ;
+* numéro de ticket ;
+* numéro de transfert.
+
+Pour un IMEI, afficher directement sa fiche complète :
+
+**Historique de l'appareil**
+
+* achat ;
+* fournisseur ;
+* réception ;
+* boutique ;
+* transfert ;
+* vente ;
+* client ;
+* retour ;
+* échange ;
+* statut actuel.
+
+---
+
+# 24. INTERFACE
+
+L'interface doit être :
+
+* moderne ;
+* professionnelle ;
+* sobre ;
+* très claire ;
+* rapide ;
+* adaptée à une utilisation quotidienne ;
+* responsive ;
+* cohérente.
+
+Évite absolument l'apparence d'un template générique généré par IA.
+
+Le logiciel doit ressembler à un véritable produit commercial professionnel.
+
+Utilise :
+
+* une hiérarchie visuelle claire ;
+* une bonne typographie ;
+* des espaces cohérents ;
+* des tableaux efficaces ;
+* des filtres ;
+* des badges de statut ;
+* des confirmations appropriées ;
+* des raccourcis clavier pour le POS ;
+* des états loading/empty/error ;
+* des notifications utiles.
+
+Ne surcharge pas les dashboards avec trop de graphiques inutiles.
+
+Priorité à l'information opérationnelle.
+
+---
+
+# 25. DASHBOARD
+
+Le dashboard doit immédiatement répondre à :
+
+**Que se passe-t-il dans ma boutique ?**
+
+Afficher par exemple :
+
+* CA aujourd'hui ;
+* nombre de ventes ;
+* marge ;
+* stock faible ;
+* derniers tickets ;
+* derniers mouvements ;
+* achats récents ;
+* transferts en cours ;
+* alertes ;
+* synchronisation.
+
+Le dashboard doit être différent selon le rôle de l'utilisateur.
+
+---
+
+# 26. ARCHITECTURE UI
+
+Organiser l'application avec une navigation claire :
+
+Dashboard
+
+Ventes
+
+* Nouvelle vente
+* Tickets
+* Factures
+* Remboursements
+* Échanges
+
+Stock
+
+* Produits
+* Stock
+* IMEI / Séries
+* Mouvements
+* Inventaire
+* Stock faible
+
+Achats
+
+* Fournisseurs
+* Commandes
+* Réceptions
+* Coûts logistiques
+
+Transferts
+
+* Demandes
+* En transit
+* Réceptions
+* Historique
+
+Clients
+
+Rapports
+
+Utilisateurs
+
+Paramètres
+
+Synchronisation
+
+---
+
+# 27. SOFT DELETE
+
+Évite les suppressions physiques lorsque les données ont une importance comptable ou historique.
+
+Utilise des suppressions logiques lorsque nécessaire.
+
+Une vente validée ne doit jamais être réellement supprimée.
+
+Un mouvement de stock historique ne doit jamais disparaître.
+
+---
+
+# 28. VALIDATION
+
+Toutes les données importantes doivent être validées côté interface ET côté logique métier.
+
+Exemples :
+
+* IMEI valide ;
+* prix positif ;
+* quantité positive ;
+* stock disponible ;
+* remboursement valide ;
+* permissions suffisantes ;
+* produit existant ;
+* boutique existante ;
+* fournisseur existant.
+
+Ne fais jamais confiance uniquement aux validations du frontend.
+
+---
+
+# 29. DONNÉES DE TEST
+
+Crée un système de seed/demo permettant de tester l'application avec :
+
+* plusieurs boutiques ;
+* plusieurs utilisateurs ;
+* plusieurs rôles ;
+* smartphones ;
+* IMEI ;
+* produits non sérialisés ;
+* produits sérialisés ;
+* fournisseurs ;
+* achats ;
+* ventes ;
+* clients ;
+* transferts ;
+* remboursements ;
+* échanges.
+
+Utilise des données fictives réalistes.
+
+---
+
+# 30. TESTS
+
+Créer des tests pour les fonctionnalités critiques.
+
+Priorité :
+
+1. gestion des IMEI ;
+2. stock ;
+3. ventes ;
+4. remboursements ;
+5. échanges ;
+6. achats ;
+7. transferts ;
+8. synchronisation ;
+9. permissions ;
+10. imports Excel.
+
+Tester notamment les cas limites.
+
+Exemples :
+
+* vendre un IMEI inexistant ;
+* vendre un IMEI déjà vendu ;
+* rembourser deux fois la même vente ;
+* transférer un smartphone déjà vendu ;
+* recevoir deux fois le même transfert ;
+* importer deux fois le même IMEI ;
+* synchroniser deux fois le même événement ;
+* modifier un produit sans permission.
+
+---
+
+# 31. PERFORMANCE
+
+L'application doit rester rapide même avec :
+
+* 50 000 produits ;
+* 100 000 unités ;
+* plusieurs centaines de milliers de mouvements ;
+* beaucoup de tickets.
+
+Ne charge pas inutilement toute la base en mémoire.
+
+Utilise :
+
+* pagination ;
+* recherche indexée ;
+* requêtes optimisées ;
+* indexes SQLite appropriés ;
+* lazy loading lorsque nécessaire.
+
+Les recherches IMEI doivent être extrêmement rapides.
+
+---
+
+# 32. SAUVEGARDES
+
+Comme l'application fonctionne offline, la sauvegarde locale est critique.
+
+Prévoir une architecture permettant :
+
+* sauvegarde de la base locale ;
+* restauration ;
+* export ;
+* sauvegarde automatique configurable ;
+* vérification d'intégrité.
+
+Ne laisse pas une panne du PC détruire toute l'activité de la boutique.
+
+---
+
+# 33. CONFIGURATION
+
+Créer un système de paramètres permettant de configurer :
+
+* nom boutique ;
+* coordonnées ;
+* devise ;
+* taxes ;
+* numérotation tickets ;
+* numérotation factures ;
+* numérotation transferts ;
+* modes de paiement ;
+* catégories ;
+* rôles ;
+* paramètres d'impression ;
+* sauvegardes ;
+* synchronisation.
+
+Ne hardcode pas les paramètres commerciaux.
+
+---
+
+# 34. IMPORTANT — MÉTHODE DE DÉVELOPPEMENT
+
+Ne génère PAS toute l'application aveuglément en une seule étape.
+
+Travaille par phases.
+
+### PHASE 1
+
+Analyse le projet existant.
+
+Inspecte :
+
+* fichiers ;
+* stack ;
+* package.json ;
+* architecture ;
+* dépendances ;
+* configuration.
+
+Ne casse rien d'existant sans raison.
+
+### PHASE 2
+
+Conçois le modèle de données complet.
+
+Avant de coder l'interface, définis :
+
+* tables ;
+* relations ;
+* indexes ;
+* contraintes ;
+* enums ;
+* identifiants ;
+* stratégie de migration.
+
+### PHASE 3
+
+Implémente le cœur métier :
+
+* produits ;
+* unités ;
+* IMEI ;
+* stock ;
+* mouvements ;
+* utilisateurs ;
+* permissions.
+
+### PHASE 4
+
+Implémente les achats et fournisseurs.
+
+### PHASE 5
+
+Implémente POS / ventes / tickets / factures.
+
+### PHASE 6
+
+Implémente remboursements et échanges.
+
+### PHASE 7
+
+Implémente transferts inter-boutiques.
+
+### PHASE 8
+
+Implémente la synchronisation.
+
+### PHASE 9
+
+Implémente imports Excel et exports.
+
+### PHASE 10
+
+Implémente rapports et dashboard.
+
+### PHASE 11
+
+Tests, sécurité, performance et finition UI.
+
+---
+
+# 35. RÈGLE IMPORTANTE POUR CLAUDE CODE
+
+À chaque phase :
+
+1. inspecte le code existant ;
+2. explique brièvement ce que tu vas modifier ;
+3. implémente ;
+4. lance les tests ;
+5. vérifie les erreurs TypeScript ;
+6. vérifie les migrations ;
+7. vérifie les fonctionnalités concernées ;
+8. corrige les problèmes ;
+9. seulement ensuite passe à la phase suivante.
+
+Ne prétends jamais qu'une fonctionnalité est terminée si elle n'est pas réellement fonctionnelle.
+
+Ne crée pas de fausses données uniquement pour faire croire que l'interface fonctionne.
+
+Toutes les actions de l'interface doivent être connectées au véritable système de données.
+
+---
+
+# 36. QUALITÉ DU CODE
+
+Le code doit être :
+
+* TypeScript strict ;
+* fortement typé ;
+* modulaire ;
+* maintenable ;
+* documenté lorsque nécessaire ;
+* sans duplication inutile ;
+* sans fonctions gigantesques ;
+* sans logique métier directement dispersée dans les composants UI.
+
+Évite :
+
+* any inutile ;
+* TODO laissés partout ;
+* mock permanent ;
+* données hardcodées ;
+* composants de plusieurs centaines de lignes lorsque cela peut être séparé ;
+* logique métier dans les composants ;
+* dépendances inutiles.
+
+---
+
+# 37. RÈGLE FONDAMENTALE
+
+Le logiciel doit être conçu comme un **véritable logiciel commercial offline-first**, et non comme une simple interface de démonstration.
+
+Les données de stock, IMEI, ventes, achats, remboursements, échanges et transferts doivent être cohérentes et traçables.
+
+La priorité absolue est :
+
+**Intégrité des données > simplicité du code > esthétique.**
+
+Mais l'interface doit malgré tout avoir un niveau de finition professionnel.
+
+---
+
+Je vais aller dormir mais ne t'arrête pas tant que tout ça n'est pas fait.
+Il y a déjà tauri dans le dossier caisse voisin de ce dossier boutique et tu peux le regarder pour la génération et tu peux aussi te référer par rapport au CI dessus.
+J'ai mis dans le dossier examples les modèles de fichiers à importer
