@@ -96,6 +96,10 @@ importers:
         version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)
 
   packages/shared:
+    dependencies:
+      '@licence/noyau':
+        specifier: github:rarianaAina/licence#main
+        version: https://codeload.github.com/rarianaAina/licence/tar.gz/d7a3a30199c850fac4cead855eab0e73a772cea0
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
@@ -363,6 +367,11 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@licence/noyau@https://codeload.github.com/rarianaAina/licence/tar.gz/d7a3a30199c850fac4cead855eab0e73a772cea0':
+    resolution: {gitHosted: true, integrity: sha512-1vFx1SV0pmTUP95wk70Qh+1RWfp1URcgvi+obVFqc3uLBkAgs8rW/hNaTwGADNxbSoYwCu3Zw+eT1ihGSZ37/w==, tarball: https://codeload.github.com/rarianaAina/licence/tar.gz/d7a3a30199c850fac4cead855eab0e73a772cea0}
+    version: 2.0.1
+    engines: {node: '>=20'}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
@@ -1414,6 +1423,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
+
+  '@licence/noyau@https://codeload.github.com/rarianaAina/licence/tar.gz/d7a3a30199c850fac4cead855eab0e73a772cea0': {}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
