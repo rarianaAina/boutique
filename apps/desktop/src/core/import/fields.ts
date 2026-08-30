@@ -56,9 +56,14 @@ export const IMPORT_FIELDS: ImportField[] = [
   {
     key: 'name',
     label: 'Désignation',
-    required: true,
+    // FACULTATIVE : les fichiers réels décrivent un article par sa marque, son
+    // modèle et ses qualificatifs, sans jamais écrire de désignation complète.
+    // L'importateur la compose — exiger une colonne que personne ne remplit
+    // rejetterait des catalogues entiers.
+    required: false,
     type: 'text',
     aliases: alias('designation', 'nom', 'libelle', 'produit', 'name', 'description', 'article'),
+    help: 'Composée à partir de la marque, du modèle et des qualificatifs si absente.',
   },
   {
     key: 'brand',
@@ -72,7 +77,7 @@ export const IMPORT_FIELDS: ImportField[] = [
     label: 'Modèle',
     required: false,
     type: 'text',
-    aliases: alias('modele', 'model', 'type'),
+    aliases: alias('modele', 'model'),
   },
   {
     key: 'reference',
@@ -216,6 +221,35 @@ export const IMPORT_FIELDS: ImportField[] = [
     required: false,
     type: 'text',
     aliases: alias('capacite', 'capacity', 'stockage', 'memoire', 'ram memoire', 'go', 'gb'),
+  },
+  {
+    key: 'type',
+    label: 'Type',
+    required: false,
+    type: 'text',
+    aliases: alias('type', 'variante', 'matiere'),
+    help: 'Verre, hydrogel… Sert de second niveau de choix au comptoir.',
+  },
+  {
+    key: 'power',
+    label: 'Puissance',
+    required: false,
+    type: 'text',
+    aliases: alias('puissance', 'watt', 'watts', 'w', 'power'),
+  },
+  {
+    key: 'withCase',
+    label: 'Avec boîtier',
+    required: false,
+    type: 'text',
+    aliases: alias('avec boitier', 'avec boite', 'boitier inclus', 'with box'),
+  },
+  {
+    key: 'withCable',
+    label: 'Avec câble',
+    required: false,
+    type: 'text',
+    aliases: alias('avec cable', 'cable inclus', 'with cable'),
   },
   {
     key: 'condition',

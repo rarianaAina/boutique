@@ -70,6 +70,24 @@ export interface AnalysisContext {
   currencyDecimals: number;
   /** Refuser un IMEI dont la clé de contrôle est fausse (réglage de la boutique). */
   strictImeiChecksum: boolean;
+  /**
+   * Famille choisie par l'utilisateur avant l'import (« Smartphones »,
+   * « Câbles »…).
+   *
+   * Elle prime sur la colonne « catégorie » du fichier : les feuilles réelles
+   * sont mono-famille — un fichier « Boitiers » ne contient que des boîtiers —
+   * et le nom de la famille n'y figure nulle part. La demander une fois vaut
+   * mieux que de la deviner mille fois.
+   */
+  forcedCategory?: string | null;
+  /**
+   * Mode de suivi imposé par la famille choisie.
+   *
+   * Un smartphone se suit par IMEI même si la colonne est encore vide ; un
+   * câble se suit par quantité même si quelqu'un a collé un numéro de série
+   * dans une cellule.
+   */
+  forcedTracking?: Tracking | null;
 }
 
 export function analyze(
@@ -117,8 +135,10 @@ export function analyze(
     const problems: string[] = [];
     const warnings: string[] = [];
 
-    const name = (values['name'] ?? '').trim();
-    if (name === '') problems.push('Désignation manquante.');
+    const name = composeName(values);
+    if (name === '') {
+      problems.push('Ni désignation, ni marque, ni modèle : la ligne ne nomme aucun produit.');
+    }
 
     const condition = values['condition'] ? parseCondition(values['condition']) : null;
 
@@ -141,7 +161,8 @@ export function analyze(
     // Priorité : la colonne « suivi » si elle existe, sinon ce que la ligne
     // porte réellement, sinon ce que les colonnes du fichier laissent entendre.
     const declared = values['tracking'] ? parseTracking(values['tracking']) : null;
-    const tracking = (declared ??
+    const tracking = (context.forcedTracking ??
+      declared ??
       (imei1 ? TRACKING.imei : serial ? TRACKING.serial : trackingFromColumns)) as Tracking;
 
     // Un identifiant absent n'est PAS une erreur : le produit est créé, sans
@@ -244,7 +265,7 @@ export function analyze(
       outcome,
       values,
       skuDerived,
-      categoryLabel: values['category']?.trim() || null,
+      categoryLabel: context.forcedCategory?.trim() || values['category']?.trim() || null,
       supplierLabel: values['supplier']?.trim() || null,
       condition,
       product:
@@ -352,6 +373,10 @@ function attributesOf(values: Record<string, string>): Record<string, string> {
     const valeur = values[source]?.trim();
     if (valeur) attributes[cible] = `${valeur}${suffixe}`;
   };
+  reprendre('type', 'type');
+  reprendre('power', 'puissance');
+  reprendre('withCase', 'avec_boitier');
+  reprendre('withCable', 'avec_cable');
   reprendre('color', 'couleur');
   reprendre('capacity', 'capacite');
   reprendre('location', 'emplacement');
@@ -359,4 +384,47 @@ function attributesOf(values: Record<string, string>): Record<string, string> {
   reprendre('batteryHealth', 'batterie', ' %');
   reprendre('cycles', 'cycles');
   return attributes;
+}
+
+/**
+ * Désignation d'une ligne.
+ *
+ * Les fichiers réels ne portent pas de désignation : ils décrivent un article
+ * par sa marque, son modèle et un qualificatif (« 45W », « Verre », « avec
+ * boîtier »). On la compose donc, dans l'ordre où un vendeur la prononcerait.
+ *
+ * Les qualificatifs entrent dans le NOM et pas seulement dans les attributs :
+ * sans eux, deux chargeurs Samsung de 25 et 45 W porteraient le même nom, donc
+ * la même référence dérivée, et le second écraserait le premier. La couleur et
+ * la mémoire en sont exclues : ce sont des axes de variante, affichés à part.
+ */
+function composeName(values: Record<string, string>): string {
+  const explicite = (values['name'] ?? '').trim();
+  if (explicite !== '') return explicite;
+
+  const morceaux: string[] = [];
+  const ajouter = (valeur: string | undefined) => {
+    const propre = valeur?.trim();
+    if (propre && !morceaux.some((m) => m.toLowerCase() === propre.toLowerCase())) {
+      morceaux.push(propre);
+    }
+  };
+  ajouter(values['brand']);
+  ajouter(values['model']);
+
+  // « Oui / Non » ne dit rien hors de son en-tête : on reprend le libellé de la
+  // colonne quand c'est oui, et l'on tait la ligne quand c'est non.
+  const drapeau = (cle: string, libelle: string) => {
+    const valeur = values[cle]?.trim().toLowerCase();
+    if (!valeur) return;
+    if (['non', 'no', 'n', '0', 'false', 'sans'].includes(valeur)) return;
+    if (['oui', 'yes', 'o', 'y', '1', 'true', 'avec'].includes(valeur)) ajouter(libelle);
+    else ajouter(values[cle]);
+  };
+  ajouter(values['type']);
+  ajouter(values['power']);
+  drapeau('withCase', 'avec boîtier');
+  drapeau('withCable', 'avec câble');
+
+  return morceaux.join(' ');
 }
