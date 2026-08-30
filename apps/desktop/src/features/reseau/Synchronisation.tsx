@@ -35,7 +35,8 @@ import { formaterDate, messageDe, useChargement } from '@/app/hooks';
  */
 export function Synchronisation() {
   const contexte = useContexte();
-  const { db, shopId, settings, deviceId, rechargerParametres, peut } = useSession();
+  const { db, shopId, shopCode, shopName, settings, deviceId, rechargerParametres, peut } =
+    useSession();
   // Consulter l'état de la file est utile à un gérant ; la déclencher engage
   // une connexion et modifie les données des autres boutiques.
   const peutSynchroniser = peut(PERMISSIONS.syncRun);
@@ -275,10 +276,100 @@ export function Synchronisation() {
             aide="Fourni par l'administrateur du réseau."
           />
         </div>
+        <LigneEnrolement
+          shopId={shopId}
+          code={shopCode}
+          nom={shopName}
+          jeton={jeton}
+          onJeton={setJeton}
+        />
+
         <Bouton variante="principal" onClick={() => void enregistrerServeur()}>
           Enregistrer
         </Bouton>
       </Carte>
+    </div>
+  );
+}
+
+/**
+ * Ligne à coller dans la configuration du serveur.
+ *
+ * POURQUOI ELLE EST PRODUITE ICI. Enrôler une boutique demande son identifiant
+ * technique — trente-six signes — son code, son nom et un jeton. Le faire
+ * recopier à la main est le geste qui casse : une lettre de travers, et la
+ * première synchronisation répond « jeton invalide » sans dire pourquoi.
+ *
+ * Le jeton est TIRÉ AU SORT ici, et non choisi : un jeton qu'on invente se
+ * devine, et il ouvre l'accès au journal du réseau. Il n'est produit que si le
+ * champ est vide — le régénérer alors qu'il est déjà déclaré au serveur
+ * couperait la boutique jusqu'à ce que quelqu'un mette la configuration à jour.
+ */
+function LigneEnrolement({
+  shopId,
+  code,
+  nom,
+  jeton,
+  onJeton,
+}: {
+  shopId: string;
+  code: string;
+  nom: string;
+  jeton: string;
+  onJeton: (valeur: string) => void;
+}) {
+  const [copie, setCopie] = useState(false);
+
+  // Le nom ne peut contenir ni virgule ni deux-points : ce sont les séparateurs
+  // de la variable d'environnement du serveur.
+  const nomPropre = nom.replace(/[:,]/g, ' ').trim() || code;
+  const ligne = jeton.trim() === '' ? '' : `${shopId}:${code}:${nomPropre}:${jeton.trim()}`;
+
+  const produire = () => {
+    const octets = crypto.getRandomValues(new Uint8Array(24));
+    let texte = '';
+    for (const octet of octets) texte += octet.toString(16).padStart(2, '0');
+    onJeton(texte);
+  };
+
+  return (
+    <div className="mt-3 rounded-md border border-encre-200 bg-encre-50 px-3.5 py-3">
+      <p className="text-sm font-medium text-encre-800">Enrôler cette boutique sur le serveur</p>
+      <p className="mt-0.5 text-sm text-encre-600">
+        Collez cette ligne dans la variable <code className="mono">BOUTIQUES</code> du serveur, en
+        séparant les boutiques par une virgule.
+      </p>
+
+      {ligne === '' ? (
+        <Bouton className="mt-2" onClick={produire}>
+          Produire le jeton de cette boutique
+        </Bouton>
+      ) : (
+        <>
+          <p className="mono mt-2 break-all rounded border border-encre-200 bg-white px-3 py-2 text-xs text-encre-800">
+            {ligne}
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <Bouton
+              taille="petit"
+              onClick={() => {
+                void navigator.clipboard?.writeText(ligne).catch(() => undefined);
+                setCopie(true);
+                setTimeout(() => setCopie(false), 1500);
+              }}
+            >
+              {copie ? 'Copié' : 'Copier la ligne'}
+            </Bouton>
+            <Bouton taille="petit" variante="discret" onClick={produire}>
+              Produire un nouveau jeton
+            </Bouton>
+          </div>
+          <p className="mt-2 text-xs text-encre-500">
+            Changer le jeton coupe la boutique tant que le serveur n’a pas été mis à jour.
+            N’enregistrez qu’après avoir collé la nouvelle ligne.
+          </p>
+        </>
+      )}
     </div>
   );
 }
