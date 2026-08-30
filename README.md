@@ -185,6 +185,39 @@ Vendre un appareil met à jour son statut avec un `WHERE status IN ('IN_STOCK',
 peuvent pas réussir toutes les deux. Le service vérifie **avant** pour donner un
 message clair au vendeur ; la base garantit **après**.
 
+### Accès aux pages et droits d'agir sont deux réglages distincts
+
+Un comptable doit pouvoir **consulter** les achats sans jamais en
+réceptionner ; un responsable stock doit **réceptionner** sans voir la page des
+utilisateurs. Une permission unique par domaine rendrait l'un des deux cas
+impossible.
+
+Chaque écran porte donc sa propre permission d'accès (`page.achats`,
+`page.caisse`), séparée des droits d'action (`purchase.receive`,
+`sale.create`). L'éditeur de rôles présente les deux listes côte à côte, avec un
+réglage **page par page**.
+
+Les bases antérieures sont rattrapées au démarrage : les pages d'un rôle sont
+déduites des droits d'action qu'il détient déjà — sans quoi ses utilisateurs
+verraient un menu vide après mise à jour.
+
+### Suivre les prix dans le temps
+
+Deux natures d'information, jamais mélangées :
+
+|                    | Nature       | Origine                                                        |
+| ------------------ | ------------ | -------------------------------------------------------------- |
+| **Prix catalogue** | une décision | saisie ou import                                               |
+| **Coût constaté**  | un fait      | ligne d'achat réceptionnée, frais logistiques ventilés compris |
+
+L'**écart** entre les deux est ce qui doit alerter : un prix d'achat catalogue
+périmé fausse la marge de chaque vente, en silence, jusqu'à ce que quelqu'un
+compare. L'écran « Évolution des prix » ouvre donc sur cet écart, seuil
+réglable, et l'export CSV le donne produit par produit.
+
+Le prix catalogue n'est **jamais** modifié automatiquement à la réception : ce
+serait prendre une décision commerciale à la place du gérant.
+
 ### Une variante est un produit, un modèle est un regroupement
 
 « iPhone 17 Pro Max rouge 256 Go » et « iPhone 17 Pro Max noir 128 Go » sont
@@ -395,8 +428,12 @@ permutation au démarrage suivant : écraser une base ouverte la corromprait.
 ## Tests
 
 ```
-254 tests · 21 fichiers
+282 tests · 22 fichiers
 ```
+
+L'intégration continue ([`.github/workflows/build.yml`](.github/workflows/build.yml))
+rejoue à chaque poussée : types, tests, format Prettier, `cargo fmt`,
+`cargo clippy -D warnings`, puis les installeurs Windows et Linux.
 
 | Fichier                   | Ce qu'il vérifie                                                                                         |
 | ------------------------- | -------------------------------------------------------------------------------------------------------- |
