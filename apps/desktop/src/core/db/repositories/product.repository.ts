@@ -327,6 +327,23 @@ export class ProductRepository {
     return rows.map((row) => row.brand);
   }
 
+  /**
+   * Nombre d'articles vendables par catégorie.
+   *
+   * Sert à peupler les tuiles du comptoir. On compte les PRODUITS et non les
+   * pièces en stock : une catégorie dont tout est en rupture reste un rayon
+   * qu'on doit pouvoir ouvrir pour annoncer un prix ou un délai.
+   */
+  async countByCategory(): Promise<Map<string, number>> {
+    const rows = await this.db.select<{ category_id: string; total: number }>(
+      `SELECT p.category_id AS category_id, COUNT(*) AS total
+         FROM product p
+        WHERE p.deleted_at IS NULL AND p.status = 'ACTIVE' AND p.category_id IS NOT NULL
+        GROUP BY p.category_id`,
+    );
+    return new Map(rows.map((row) => [row.category_id, row.total]));
+  }
+
   async create(input: ProductInput & { sku: string }, id = newId()): Promise<string> {
     const at = nowIso();
     await this.db.execute(

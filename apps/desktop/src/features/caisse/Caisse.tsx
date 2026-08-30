@@ -22,6 +22,7 @@ import { useNavigation } from '@/app/navigation';
 import { messageDe, useChargement, useDifferee, useMonnaie } from '@/app/hooks';
 import { TicketImprimable } from './TicketImprimable';
 import { ChoixArticle } from './ChoixArticle';
+import { NavigationCatalogue } from './NavigationCatalogue';
 
 /**
  * Écran d'encaissement (§12).
@@ -66,6 +67,9 @@ export function Caisse() {
   const champRecherche = useRef<HTMLInputElement>(null);
 
   const peutRemiser = peut(PERMISSIONS.saleDiscount);
+  // La page peut être ouverte sans le droit d'encaisser — consulter un prix au
+  // comptoir est légitime. Le bouton d'encaissement, lui, ne doit pas mentir.
+  const peutEncaisser = peut(PERMISSIONS.saleCreate);
 
   /* ─── Recherche ───────────────────────────────────────────────────────── */
   const resultats = useChargement(async () => {
@@ -172,7 +176,7 @@ export function Caisse() {
         evenement.preventDefault();
         champRecherche.current?.focus();
         champRecherche.current?.select();
-      } else if (evenement.key === 'F4' && panier.length > 0) {
+      } else if (evenement.key === 'F4' && panier.length > 0 && peutEncaisser) {
         evenement.preventDefault();
         setDialoguePaiement(true);
       } else if (evenement.key === 'Escape' && !dialoguePaiement && !dialogueClient) {
@@ -181,7 +185,7 @@ export function Caisse() {
     };
     window.addEventListener('keydown', surTouche);
     return () => window.removeEventListener('keydown', surTouche);
-  }, [panier.length, dialoguePaiement, dialogueClient]);
+  }, [panier.length, dialoguePaiement, dialogueClient, peutEncaisser]);
 
   useEffect(() => {
     champRecherche.current?.focus();
@@ -252,13 +256,13 @@ export function Caisse() {
 
         {erreur ? <Erreur message={erreur} /> : null}
 
-        <Carte compact className="min-h-0 flex-1">
+        <Carte compact className="flex min-h-0 flex-1 flex-col">
           {recherche.trim().length < 2 ? (
-            <Vide
-              icone="recherche"
-              titre="Scannez ou cherchez un article"
-              detail="Un IMEI ou un numéro de série reconnu est ajouté directement au panier. Pour un accessoire, cherchez son nom ou son SKU."
-            />
+            /* Tant qu'on n'a rien tapé, le catalogue se PARCOURT. Exiger une
+               recherche bloquait la vente d'un article dont le vendeur ne
+               connaît ni le nom exact ni la référence — un cache-écran, une
+               housse — et le scanner ne sert à rien sur ces produits-là. */
+            <NavigationCatalogue onChoisir={ouvrirChoix} />
           ) : resultats.donnees && resultats.donnees.produits.length === 0 ? (
             <Vide
               icone="boite"
@@ -410,11 +414,16 @@ export function Caisse() {
               taille="grand"
               pleineLargeur
               icone="check"
-              disabled={panier.length === 0}
+              disabled={panier.length === 0 || !peutEncaisser}
               onClick={() => setDialoguePaiement(true)}
             >
               Encaisser (F4)
             </Bouton>
+            {!peutEncaisser ? (
+              <p className="mt-2 text-center text-xs text-encre-500">
+                Votre rôle ne permet pas d'encaisser.
+              </p>
+            ) : null}
           </div>
         </Carte>
 
