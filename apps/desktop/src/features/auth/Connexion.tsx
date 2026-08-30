@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Bouton } from '@/components/ui/Bouton';
 import { Champ } from '@/components/ui/Champ';
 import { Erreur } from '@/components/ui/Page';
-import { Icone } from '@/components/ui/Icone';
+import logo from '@/assets/logo.png';
 import { useSession } from '@/app/session';
 import { messageDe } from '@/app/hooks';
 
@@ -44,12 +44,17 @@ export function Connexion() {
   return (
     <div className="flex h-full items-center justify-center bg-encre-100 p-6">
       <div className="w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-marque-700 text-white">
-            <Icone nom="boite" taille={24} />
-          </span>
-          <h1 className="text-encre-900">{shopName || 'Boutique'}</h1>
-          {shopCode ? <p className="text-xs text-encre-500">{shopCode}</p> : null}
+        <div className="mb-6 flex flex-col items-center gap-3 text-center">
+          {/* Le logo est EMBARQUÉ dans le binaire, pas servi par un réseau :
+              c'est le premier écran de la journée, et il doit s'afficher même
+              quand la boutique n'a aucune connexion. */}
+          <img src={logo} alt="MOBI STOCK" className="h-20 w-auto" />
+          {shopName ? (
+            <div>
+              <h1 className="text-encre-900">{shopName}</h1>
+              {shopCode ? <p className="text-xs text-encre-500">{shopCode}</p> : null}
+            </div>
+          ) : null}
         </div>
 
         <form

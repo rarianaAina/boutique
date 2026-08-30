@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Icone } from '@/components/ui/Icone';
+import embleme from '@/assets/embleme.png';
 import { Bouton } from '@/components/ui/Bouton';
 import { Avertissement } from '@/components/ui/Page';
 import { NAVIGATION, type CleEcran } from './routes';
@@ -58,9 +59,10 @@ export function Shell() {
     <div className="flex h-full overflow-hidden bg-encre-100">
       <nav className="flex w-56 shrink-0 flex-col border-r border-encre-200 bg-white">
         <div className="flex items-center gap-2.5 border-b border-encre-200 px-4 py-3">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-marque-700 text-white">
-            <Icone nom="boite" taille={17} />
-          </span>
+          {/* L'emblème seul, sans le nom de marque : le rail est étroit, et
+              c'est le nom de LA BOUTIQUE qui doit y être lisible — c'est lui
+              qui change d'un poste à l'autre. */}
+          <img src={embleme} alt="" className="h-8 w-8 shrink-0 object-contain" />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-encre-900">
               {shopName || 'Boutique'}

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Bouton } from '@/components/ui/Bouton';
 import { Champ } from '@/components/ui/Champ';
 import { Erreur, Information } from '@/components/ui/Page';
-import { Icone } from '@/components/ui/Icone';
+import logo from '@/assets/logo.png';
 import { useSession } from '@/app/session';
 import { messageDe } from '@/app/hooks';
 
@@ -54,10 +54,8 @@ export function Installation() {
   return (
     <div className="flex h-full items-center justify-center overflow-auto bg-encre-100 p-6">
       <div className="w-full max-w-2xl">
-        <div className="mb-6 flex flex-col items-center gap-2 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-marque-700 text-white">
-            <Icone nom="boite" taille={24} />
-          </span>
+        <div className="mb-6 flex flex-col items-center gap-3 text-center">
+          <img src={logo} alt="MOBI STOCK" className="h-20 w-auto" />
           <h1 className="text-encre-900">Installation</h1>
           <p className="text-sm text-encre-600">
             Quelques informations suffisent pour commencer. Tout le reste se règle ensuite.
