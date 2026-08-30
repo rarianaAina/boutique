@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    // `crypto.randomUUID` est un global : présent dans la WebView comme dans
+    // Node >= 19. Ces types le déclarent sans tirer le DOM dans un paquet qui
+    // doit rester utilisable côté serveur.
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "exclude": ["dist", "**/*.test.ts"]
+}
