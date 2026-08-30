@@ -33,6 +33,19 @@ fn migrations() -> Vec<Migration> {
     ]
 }
 
+/// DEUX RÉGLAGES DE `tauri.conf.json` À NE PAS TOUCHER À LA LÉGÈRE.
+///
+/// `identifier` — le dossier de données locales en dépend
+/// (`%APPDATA%\<identifier>` sous Windows, `~/.config/<identifier>` sous
+/// Linux). Le changer orphelinerait la base de chaque poste déjà installé, et
+/// avec elle les ventes non encore synchronisées, qui n'existent nulle part
+/// ailleurs. Le nom commercial affiché, lui, se règle par `productName`, sans
+/// conséquence sur les données.
+///
+/// `bundle.icon` — la liste DOIT comporter un fichier `.ico`. Les empaqueteurs
+/// Windows (NSIS et MSI) ne cherchent une icône que dans cette liste : sans
+/// `.ico`, la compilation échoue en fin de parcours sur « Couldn't find a .ico
+/// icon », après plusieurs minutes.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
