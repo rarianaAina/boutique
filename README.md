@@ -201,6 +201,33 @@ Les bases antérieures sont rattrapées au démarrage : les pages d'un rôle son
 déduites des droits d'action qu'il détient déjà — sans quoi ses utilisateurs
 verraient un menu vide après mise à jour.
 
+### Valorisation des sorties : ce qui est fait, précisément
+
+| Suivi du produit           | Méthode                                     | Pourquoi                                                                                                                                                  |
+| -------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **IMEI / numéro de série** | **identification spécifique**               | chaque appareil porte son coût réel, frais logistiques compris. On ne _suppose_ pas quel exemplaire est parti — on le sait. C'est plus exact que le FIFO. |
+| **Quantité**               | **catalogue** (défaut) ou **FIFO** (option) | pas d'exemplaire identifiable : il faut une convention, et c'est un choix de boutique.                                                                    |
+
+La liste des exemplaires proposés au comptoir est triée du plus ancien au plus
+récent : l'écoulement FIFO est naturel, jamais imposé. Un bouton « Prendre le
+plus ancien » couvre le cas courant.
+
+En FIFO, les couches d'entrée sont **recalculées depuis les mouvements** à
+chaque sortie, plutôt que tenues dans une table dédiée : les mouvements font
+déjà foi, et une table parallèle finirait par s'en écarter sans qu'on sache
+laquelle croire. Une sortie qui enjambe plusieurs couches reçoit leur moyenne
+pondérée — exact au total, seule chose qui compte pour la marge.
+
+### Suivre les lots d'approvisionnement
+
+« J'importe un iPhone 14 Pro Max à 12 000, je le vends 15 000. Demain j'en
+importe à 13 000, je le vends 16 000. »
+
+L'écran des prix montre chaque **arrivage** avec son fournisseur, son document
+d'achat, ses quantités reçues et restantes, son coût unitaire, **le prix de
+vente en vigueur ce jour-là** — pas celui d'aujourd'hui — et la marge qui en
+découle.
+
 ### Suivre les prix dans le temps
 
 Deux natures d'information, jamais mélangées :
@@ -428,7 +455,7 @@ permutation au démarrage suivant : écraser une base ouverte la corromprait.
 ## Tests
 
 ```
-282 tests · 22 fichiers
+301 tests · 23 fichiers
 ```
 
 L'intégration continue ([`.github/workflows/build.yml`](.github/workflows/build.yml))
