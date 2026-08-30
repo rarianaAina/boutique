@@ -27,6 +27,9 @@ apps/*/src-tauri/gen/
 # reste ouvert dans LibreOffice
 .~lock.*#
 
+# cahier des charges : document de travail interne, hors du dépôt public
+Prompt.txt
+
 # éditeurs / OS
 .DS_Store
 .vscode/*
