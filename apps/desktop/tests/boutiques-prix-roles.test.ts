@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   ALL_PAGE_PERMISSIONS,
+  PAGE_GROUPS,
+  PAGE_LABELS,
   PAGE_PERMISSIONS,
   PERMISSIONS,
   PermissionDeniedError,
@@ -308,5 +310,35 @@ describe('accès par page', () => {
     // Le tableau de bord est toujours ouvert : sans lui, la session s'ouvrirait
     // sur un écran vide.
     expect(pages).toContain(PAGE_PERMISSIONS.tableau);
+  });
+});
+
+/**
+ * Découvrabilité de la gestion des accès.
+ *
+ * Une fonctionnalité qu'on ne trouve pas n'existe pas. Ces vérifications
+ * portent sur ce qui la rend atteignable, pas sur son fonctionnement.
+ */
+describe('accès à la gestion des rôles', () => {
+  it('le menu annonce les rôles, pas seulement les utilisateurs', () => {
+    const entree = TOUS_LES_ECRANS.find((ecran) => ecran.cle === 'utilisateurs');
+    expect(entree?.titre).toMatch(/rôles/i);
+  });
+
+  it('chaque page du logiciel est réglable, sans exception', () => {
+    // Si un écran existait sans page correspondante, son accès serait
+    // impossible à régler — et il resterait ouvert à tous, en silence.
+    const reglables = new Set(PAGE_GROUPS.flatMap((groupe) => groupe.pages));
+    for (const ecran of TOUS_LES_ECRANS) {
+      expect(reglables.has(ecran.permission), ecran.cle).toBe(true);
+    }
+  });
+
+  it('chaque page réglable porte un libellé lisible', () => {
+    for (const page of ALL_PAGE_PERMISSIONS) {
+      expect(PAGE_LABELS[page], page).toBeTruthy();
+      // Pas de code technique dans une case à cocher que lit un gérant.
+      expect(PAGE_LABELS[page].startsWith('page.'), page).toBe(false);
+    }
   });
 });

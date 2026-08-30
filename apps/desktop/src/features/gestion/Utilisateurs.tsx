@@ -56,6 +56,7 @@ export function Utilisateurs() {
     <div className="flex h-full min-h-0 flex-col">
       <EnTetePage
         titre="Utilisateurs et rôles"
+        sousTitre="Les comptes, et ce que chaque rôle peut ouvrir et faire."
         actions={
           onglet === 'utilisateurs' ? (
             <Bouton variante="principal" icone="plus" onClick={() => setCreation(true)}>
@@ -77,12 +78,20 @@ export function Utilisateurs() {
                 : 'border-transparent text-encre-600 hover:text-encre-900'
             }`}
           >
-            {cle === 'utilisateurs' ? 'Utilisateurs' : 'Rôles et permissions'}
+            {cle === 'utilisateurs' ? 'Utilisateurs' : 'Rôles et accès aux pages'}
           </button>
         ))}
       </div>
 
-      <Carte compact className="min-h-0 flex-1">
+      {onglet === 'roles' ? (
+        <Information>
+          Un rôle réunit DEUX réglages : les <strong>pages</strong> qu'il peut ouvrir, et les{' '}
+          <strong>actions</strong> qu'il peut y accomplir. Un comptable peut ainsi consulter les
+          achats sans jamais en réceptionner. Ouvrez un rôle pour les régler page par page.
+        </Information>
+      ) : null}
+
+      <Carte compact className="mt-3 min-h-0 flex-1">
         {utilisateurs.erreur ? (
           <Erreur message={utilisateurs.erreur} />
         ) : onglet === 'utilisateurs' ? (
@@ -129,19 +138,68 @@ export function Utilisateurs() {
             onLigneCliquee={(ligne) => setRoleEdite(ligne.id)}
             vide={{ icone: 'utilisateur', titre: 'Aucun rôle' }}
             colonnes={[
-              { cle: 'nom', titre: 'Rôle', rendu: (l) => l.name },
-              { cle: 'code', titre: 'Code', rendu: (l) => <span className="mono">{l.code}</span> },
-              { cle: 'description', titre: 'Description', rendu: (l) => l.description ?? '—' },
               {
-                cle: 'permissions',
-                titre: 'Permissions',
+                cle: 'nom',
+                titre: 'Rôle',
+                rendu: (l) => (
+                  <div>
+                    <div className="font-medium text-encre-900">{l.name}</div>
+                    <div className="text-xs text-encre-500">{l.description ?? ''}</div>
+                  </div>
+                ),
+              },
+              { cle: 'code', titre: 'Code', rendu: (l) => <span className="mono">{l.code}</span> },
+              {
+                cle: 'comptes',
+                titre: 'Comptes',
                 num: true,
-                rendu: (l) => l.permissions.length,
+                rendu: (l) =>
+                  (utilisateurs.donnees?.liste ?? []).filter((compte) => compte.roleId === l.id)
+                    .length,
               },
               {
-                cle: 'systeme',
+                // Deux compteurs plutôt qu'un : c'est la distinction même du
+                // modèle — ce qu'un rôle peut OUVRIR, et ce qu'il peut FAIRE.
+                cle: 'pages',
+                titre: 'Pages',
+                num: true,
+                rendu: (l) => (
+                  <Badge ton="info">
+                    {l.permissions.filter((permission) => isPagePermission(permission)).length} /{' '}
+                    {ALL_PAGE_PERMISSIONS.length}
+                  </Badge>
+                ),
+              },
+              {
+                cle: 'actions',
+                titre: 'Actions',
+                num: true,
+                rendu: (l) => (
+                  <Badge ton="neutre">
+                    {l.permissions.filter((permission) => !isPagePermission(permission)).length}
+                  </Badge>
+                ),
+              },
+              {
+                cle: 'regler',
                 titre: '',
-                rendu: (l) => (l.isSystem ? <Badge ton="neutre">Livré</Badge> : null),
+                rendu: (l) => (
+                  <span className="flex items-center justify-end gap-2">
+                    {l.isSystem ? <Badge ton="neutre">Livré</Badge> : null}
+                    {/* Un bouton explicite : une ligne cliquable sans
+                        affordance visible ne se découvre pas. */}
+                    <Bouton
+                      taille="petit"
+                      icone="reglage"
+                      onClick={(evenement) => {
+                        evenement.stopPropagation();
+                        setRoleEdite(l.id);
+                      }}
+                    >
+                      Régler les accès
+                    </Bouton>
+                  </span>
+                ),
               },
             ]}
           />

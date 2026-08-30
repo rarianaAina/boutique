@@ -221,7 +221,10 @@ export const NAVIGATION: Groupe[] = [
       },
       {
         cle: 'utilisateurs',
-        titre: 'Utilisateurs',
+        // « Utilisateurs » seul cachait la gestion des rôles derrière un
+        // onglet, et personne ne l'y cherchait. Un intitulé de menu doit
+        // annoncer TOUT ce que l'écran permet.
+        titre: 'Utilisateurs et rôles',
         icone: 'utilisateur',
         permission: PAGE_PERMISSIONS.utilisateurs,
       },
