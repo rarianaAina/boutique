@@ -84,7 +84,7 @@ export class SyncEngine {
       duplicates: 0,
       rejected: 0,
       pulled: 0,
-      applied: { applied: 0, skipped: 0, failed: 0, errors: [] },
+      applied: { applied: 0, skipped: 0, ignored: 0, failed: 0, errors: [] },
       cursor: await this.meta.getNumber(META_KEYS.syncCursor, 0),
       finishedAt: nowIso(),
       transportError: null,
@@ -191,6 +191,7 @@ export class SyncEngine {
       const report = await applier.applyAll(response.events);
       outcome.applied.applied += report.applied;
       outcome.applied.skipped += report.skipped;
+      outcome.applied.ignored += report.ignored;
       outcome.applied.failed += report.failed;
       outcome.applied.errors.push(...report.errors);
 

@@ -73,7 +73,13 @@ describe('synchronisation', () => {
     }
   });
 
-  it('réplique le registre des IMEI, pour que le réseau entier les connaisse', async () => {
+  it('ne montre PAS à une boutique les appareils d’une autre', async () => {
+    // Cloisonnement voulu : une boutique ne connaît que ses appareils et ceux
+    // qu'on lui expédie. Elle les découvrira à l'expédition, qui porte la
+    // fiche complète de chaque appareil du colis.
+    //
+    // Ce qui n'en dépend PAS : l'unicité de l'IMEI. C'est le serveur qui tient
+    // le registre de détention, et l'épreuve suivante le vérifie.
     const network = await createNetwork();
     try {
       const productId = await seedCatalog(network);
@@ -83,12 +89,30 @@ describe('synchronisation', () => {
         units: imei.map((value) => ({ imei1: value })),
       });
       await sync(network.a);
+      const resultat = await sync(network.b);
+
+      expect(await new UnitRepository(network.b.db).byIdentifier(imei[0]!)).toBeNull();
+      // Écartés, et non « en échec » : rien n'est à corriger.
+      expect(resultat.applied.ignored).toBeGreaterThan(0);
+      expect(resultat.applied.failed).toBe(0);
+    } finally {
+      network.close();
+    }
+  });
+
+  it('réplique le catalogue, sans lequel un transfert arriverait vide', async () => {
+    const network = await createNetwork();
+    try {
+      const productId = await seedCatalog(network);
+      await new StockService(network.a.context).receiveUnits({
+        productId,
+        units: imeiSeries(1).map((value) => ({ imei1: value })),
+      });
+      await sync(network.a);
       await sync(network.b);
 
-      const found = await new UnitRepository(network.b.db).byIdentifier(imei[0]!);
-      expect(found).not.toBeNull();
-      // Chez B, l'appareil appartient à A : il n'est pas dans son stock à elle.
-      expect(found?.shopId).toBe(network.a.shopId);
+      const produit = await new ProductRepository(network.b.db).byId(productId);
+      expect(produit).not.toBeNull();
     } finally {
       network.close();
     }
@@ -138,14 +162,21 @@ describe('synchronisation', () => {
       const second = await sync(network.b);
       const third = await sync(network.b);
 
-      expect(first.applied.applied).toBeGreaterThan(0);
+      // Les trois appareils de A sont écartés une fois, et une seule : le
+      // curseur avance sur eux, sinon on les réexaminerait à chaque
+      // synchronisation, indéfiniment.
+      expect(first.applied.ignored).toBe(3);
+      expect(second.applied.ignored).toBe(0);
+      expect(third.applied.ignored).toBe(0);
       expect(second.pulled).toBe(0);
       expect(third.pulled).toBe(0);
 
+      // Aucun appareil de A chez B, et surtout aucun doublon : le curseur a
+      // bien avancé sur les événements écartés.
       const units = await network.b.db.select<{ total: number }>(
         'SELECT COUNT(*) AS total FROM product_unit',
       );
-      expect(units[0]?.total).toBe(3);
+      expect(units[0]?.total).toBe(0);
     } finally {
       network.close();
     }

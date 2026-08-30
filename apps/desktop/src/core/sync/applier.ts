@@ -25,18 +25,30 @@ import type { SqlExecutor } from '../db/client';
  *
  * CE QUI EST APPLIQUÉ, ET CE QUI NE L'EST PAS :
  *
- *   - le CATALOGUE et le REGISTRE DES APPAREILS sont répliqués partout : c'est
- *     ce qui rend l'IMEI unique dans tout le réseau et permet de répondre à
- *     « où est cet appareil ? » depuis n'importe quelle boutique ;
- *   - les MOUVEMENTS et les VENTES d'une autre boutique ne sont pas rejoués
- *     comme des mouvements locaux : ils ne concernent pas le stock d'ici. Seuls
- *     les faits qui déplacent un appareil (transfert, vente) mettent à jour
- *     l'appareil lui-même.
+ *   - le CATALOGUE est répliqué partout — fiches produits, fournisseurs,
+ *     clients. Sans lui, un transfert arriverait avec des articles inconnus ;
+ *   - les APPAREILS ne le sont pas. Une boutique ne connaît que les siens et
+ *     ceux qu'on lui expédie ; elle les découvre à l'expédition, qui porte la
+ *     fiche complète de chaque appareil du colis ;
+ *   - les MOUVEMENTS et les VENTES d'une autre boutique ne sont jamais rejoués :
+ *     ils ne concernent pas le stock d'ici ;
+ *   - les TRANSFERTS ne s'appliquent qu'aux deux boutiques concernées. Une
+ *     troisième n'a rien à savoir d'un colis qui ne la regarde pas.
+ *
+ * POURQUOI CE CLOISONNEMENT, ET CE QU'IL COÛTE. Répliquer tous les appareils
+ * permettait de répondre « on l'a, mais à Antananarivo » depuis n'importe quel
+ * comptoir. C'était utile, et c'était aussi donner à chaque boutique la vue du
+ * parc entier. Le choix est ici de cloisonner. L'unicité d'un IMEI n'en dépend
+ * PAS : c'est le serveur qui tient le registre de détention et qui arbitre —
+ * un double emploi se voit toujours, à la synchronisation plutôt qu'au scan.
  */
 
 export interface ApplyReport {
   applied: number;
+  /** Déjà appliqués : rejeu après coupure, curseur remis en arrière. */
   skipped: number;
+  /** Écartés parce qu'ils concernent une autre boutique. */
+  ignored: number;
   failed: number;
   errors: { eventId: string; type: string; message: string }[];
 }
@@ -48,11 +60,19 @@ export class SyncApplier {
   ) {}
 
   async applyAll(events: readonly SequencedEvent[]): Promise<ApplyReport> {
-    const report: ApplyReport = { applied: 0, skipped: 0, failed: 0, errors: [] };
+    const report: ApplyReport = { applied: 0, skipped: 0, ignored: 0, failed: 0, errors: [] };
 
     for (const event of events) {
       if (await this.alreadyApplied(event.id)) {
         report.skipped += 1;
+        continue;
+      }
+      if (!(await this.concerne(event))) {
+        // Consigné comme traité, et non laissé en attente : sans cela, le
+        // curseur avancerait en laissant derrière lui une file d'événements
+        // qu'on réexaminerait à chaque synchronisation, indéfiniment.
+        report.ignored += 1;
+        await this.remember(event, 'SENT', null);
         continue;
       }
       try {
@@ -103,6 +123,61 @@ export class SyncApplier {
         error,
       ],
     );
+  }
+
+  /**
+   * L'événement concerne-t-il cette boutique ?
+   *
+   * Trois régimes, et ils se justifient chacun :
+   *
+   *   — le CATALOGUE est commun. Un produit, un fournisseur, un client créés
+   *     ailleurs doivent exister ici, sinon un transfert arriverait avec des
+   *     articles inconnus et un prix vide ;
+   *   — un TRANSFERT ne regarde que ses deux boutiques. La troisième n'a pas à
+   *     savoir ce qui circule entre les deux autres ;
+   *   — tout le reste — entrées, sorties, ventes, changements d'état d'un
+   *     appareil — n'a de sens que chez celui qui l'a vécu. Une boutique ne
+   *     tient pas le stock d'une autre.
+   */
+  private async concerne(event: SequencedEvent): Promise<boolean> {
+    switch (event.type) {
+      case SYNC_EVENT.productCreated:
+      case SYNC_EVENT.productUpdated:
+      case SYNC_EVENT.supplierUpserted:
+      case SYNC_EVENT.customerUpserted:
+        return true;
+
+      case SYNC_EVENT.transferRequested:
+      case SYNC_EVENT.transferApproved:
+      case SYNC_EVENT.transferShipped:
+      case SYNC_EVENT.transferReceived:
+      case SYNC_EVENT.transferRejected:
+      case SYNC_EVENT.transferCancelled: {
+        const de = str(event.payload['fromShopId']) ?? event.shopId;
+        const vers = str(event.payload['toShopId']);
+        if (de === this.localShopId || vers === this.localShopId) return true;
+
+        // Les événements de FIN DE COURSE — réception, refus, annulation — ne
+        // répètent pas les deux boutiques : le colis est déjà connu de celui
+        // qui les reçoit, et c'est cette connaissance qui fait foi. S'en
+        // remettre à la seule charge ferait manquer à l'expéditeur l'accusé de
+        // réception de sa propre marchandise.
+        const transferId = str(event.payload['transferId']);
+        return transferId !== null && (await this.transfertConnu(transferId));
+      }
+
+      default:
+        return event.shopId === this.localShopId;
+    }
+  }
+
+  /** Ce colis a-t-il déjà une trace ici ? */
+  private async transfertConnu(transferId: string): Promise<boolean> {
+    const rows = await this.db.select<{ id: string }>(
+      'SELECT id FROM transfer WHERE id = ? LIMIT 1',
+      [transferId],
+    );
+    return rows.length > 0;
   }
 
   private async apply(event: SequencedEvent): Promise<void> {
