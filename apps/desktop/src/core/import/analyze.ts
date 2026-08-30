@@ -115,6 +115,8 @@ export function analyze(
       ? TRACKING.serial
       : TRACKING.quantity;
 
+  const partages = recenserReferencesPartagees(sheet, mapping);
+
   const rows: AnalyzedRow[] = [];
   const counts: Record<RowOutcome, number> = { CREATE: 0, UPDATE: 0, SKIP: 0, ERROR: 0 };
 
@@ -135,11 +137,6 @@ export function analyze(
     const problems: string[] = [];
     const warnings: string[] = [];
 
-    const name = composeName(values);
-    if (name === '') {
-      problems.push('Ni désignation, ni marque, ni modèle : la ligne ne nomme aucun produit.');
-    }
-
     const condition = values['condition'] ? parseCondition(values['condition']) : null;
 
     // Référence : celle du fichier, ou une référence dérivée du modèle. Ce qui
@@ -147,6 +144,27 @@ export function analyze(
     // « Samsung » de capacité et de couleur identiques SONT le même produit.
     const providedSku = (values['sku'] ?? '').trim();
     const skuDerived = providedSku === '';
+
+    /*
+     * Une même référence pour plusieurs appareils n'est PAS une faute.
+     *
+     * Un verre trempé « Standard 9H » porte une seule référence et s'adapte à
+     * plusieurs téléphones ; le client écrit une ligne par compatibilité, en
+     * mettant l'appareil visé dans la colonne « Marque ». C'est un seul article
+     * du catalogue, pas cinq.
+     *
+     * Dans ce cas l'appareil sort du NOM — sinon l'article s'appellerait du nom
+     * du premier téléphone rencontré — et devient une compatibilité, sous
+     * laquelle le comptoir saura le retrouver.
+     */
+    const compatibilites = skuDerived ? [] : (partages.get(providedSku)?.marques ?? []);
+    const referencePartagee = compatibilites.length > 1;
+
+    const name = composeName(values, referencePartagee);
+    if (name === '') {
+      problems.push('Ni désignation, ni marque, ni modèle : la ligne ne nomme aucun produit.');
+    }
+
     const sku = skuDerived
       ? derivedSku([name, values['brand'], values['capacity'], values['color']])
       : providedSku;
@@ -218,21 +236,37 @@ export function analyze(
     // quantité : plusieurs téléphones du même modèle partagent leur référence,
     // c'est même la règle.
     //
-    // Et la nature du doublon compte : une référence SAISIE deux fois est une
-    // faute de saisie à corriger ; une référence DÉRIVÉE qui se répète signale
-    // seulement que le fichier ne permet pas de distinguer deux lignes. Dans ce
-    // second cas, la ligne est ignorée avec un avertissement, pas rejetée.
+    // Et la nature du doublon compte.
+    //
+    // Une référence SAISIE deux fois désigne le même article : le client répète
+    // sa référence pour chaque appareil compatible, ou simplement pour un
+    // réassort. Les quantités se cumulent sur un seul produit, et la ligne
+    // passe — la rejeter obligeait à découper un fichier parfaitement valide.
+    //
+    // Une référence DÉRIVÉE qui se répète est autre chose : elle signale que le
+    // fichier ne permet pas de distinguer deux lignes. On ignore alors la
+    // seconde, sans cumuler, parce qu'on ne sait pas si c'est le même article.
     let duplicateOfLine: number | null = null;
     if (sku !== '' && tracking === TRACKING.quantity) {
       const previous = seenSkus.get(sku);
       if (previous !== undefined) {
-        duplicateOfLine = previous;
         if (skuDerived) {
+          duplicateOfLine = previous;
           warnings.push(
             `Même modèle qu'à la ligne ${previous} : ligne ignorée, les quantités ne sont pas cumulées.`,
           );
         } else {
-          problems.push(`Le SKU ${sku} apparaît déjà ligne ${previous}.`);
+          warnings.push(
+            `Référence déjà vue ligne ${previous} : même article, les quantités sont cumulées.`,
+          );
+          // Un prix différent d'une ligne à l'autre serait perdu en silence :
+          // c'est la première ligne qui fixe le prix du produit.
+          const prixPrecedent = partages.get(sku)?.prix;
+          if (prixPrecedent && prixPrecedent.size > 1) {
+            warnings.push(
+              `Prix de vente différents pour la même référence (${[...prixPrecedent].join(', ')}) : celui de la ligne ${previous} est retenu.`,
+            );
+          }
         }
       } else {
         seenSkus.set(sku, rowNumber);
@@ -285,7 +319,7 @@ export function analyze(
               barcode: values['barcode'] ?? null,
               unit: values['unit'] ?? 'pièce',
               minStock: Number(values['minStock'] ?? 0) || 0,
-              attributes: attributesOf(values),
+              attributes: attributesOf(values, compatibilites),
             },
       unit: imei1 || imei2 || serial ? { imei1, imei2, serial } : null,
       quantity: readQuantity(values['quantity'], tracking),
@@ -367,8 +401,14 @@ function readQuantity(value: string | undefined, tracking: Tracking): number {
  * santé de la batterie et le nombre de cycles sont exactement ce qu'un vendeur
  * consulte avant de céder un téléphone d'occasion.
  */
-function attributesOf(values: Record<string, string>): Record<string, string> {
+function attributesOf(
+  values: Record<string, string>,
+  compatibilites: string[] = [],
+): Record<string, string> {
   const attributes: Record<string, string> = {};
+  // Écrite en clair et séparée par des virgules : le comptoir la découpe pour
+  // proposer chaque appareil, et le vendeur la lit telle quelle sur la fiche.
+  if (compatibilites.length > 1) attributes['compatibilite'] = compatibilites.join(', ');
   const reprendre = (source: string, cible: string, suffixe = '') => {
     const valeur = values[source]?.trim();
     if (valeur) attributes[cible] = `${valeur}${suffixe}`;
@@ -398,7 +438,7 @@ function attributesOf(values: Record<string, string>): Record<string, string> {
  * la même référence dérivée, et le second écraserait le premier. La couleur et
  * la mémoire en sont exclues : ce sont des axes de variante, affichés à part.
  */
-function composeName(values: Record<string, string>): string {
+function composeName(values: Record<string, string>, sansMarque = false): string {
   const explicite = (values['name'] ?? '').trim();
   if (explicite !== '') return explicite;
 
@@ -409,7 +449,7 @@ function composeName(values: Record<string, string>): string {
       morceaux.push(propre);
     }
   };
-  ajouter(values['brand']);
+  if (!sansMarque) ajouter(values['brand']);
   ajouter(values['model']);
 
   // « Oui / Non » ne dit rien hors de son en-tête : on reprend le libellé de la
@@ -427,4 +467,38 @@ function composeName(values: Record<string, string>): string {
   drapeau('withCable', 'avec câble');
 
   return morceaux.join(' ');
+}
+
+/**
+ * Références saisies qui reviennent sur plusieurs lignes du fichier.
+ *
+ * Relever d'avance ce que chaque référence couvre est nécessaire : la PREMIÈRE
+ * ligne doit déjà savoir que l'article est partagé, sans quoi elle prendrait le
+ * nom du premier téléphone rencontré et le catalogue s'appellerait « Samsung
+ * S23 Ultra Standard 9H » pour un verre qui va sur dix appareils.
+ */
+function recenserReferencesPartagees(
+  sheet: SheetData,
+  mapping: Record<number, string>,
+): Map<string, { marques: string[]; prix: Set<string> }> {
+  const releve = new Map<string, { marques: string[]; prix: Set<string> }>();
+  for (const raw of sheet.rows) {
+    const lu: Record<string, string> = {};
+    for (const [column, key] of Object.entries(mapping)) {
+      const value = raw[Number(column)] ?? '';
+      if (value !== '') lu[key] = value;
+    }
+    const reference = (lu['sku'] ?? '').trim();
+    if (reference === '') continue;
+
+    const entree = releve.get(reference) ?? { marques: [], prix: new Set<string>() };
+    const marque = (lu['brand'] ?? '').trim();
+    if (marque && !entree.marques.some((connue) => connue.toLowerCase() === marque.toLowerCase())) {
+      entree.marques.push(marque);
+    }
+    const prix = (lu['salePrice'] ?? '').trim();
+    if (prix) entree.prix.add(prix);
+    releve.set(reference, entree);
+  }
+  return releve;
 }
