@@ -7,7 +7,15 @@ import { FAMILLES, devinerFamille } from '@/core/import/familles';
 import { ImportService } from '@/core/services/import.service';
 import { ProductRepository } from '@/core/db/repositories/product.repository';
 import { CategoryRepository } from '@/core/db/repositories/category.repository';
-import { axeSeparant, filtrer, valeursDe, SANS_VALEUR } from '@/core/catalogue/facettes';
+import {
+  axeSeparant,
+  axesPour,
+  filtrer,
+  valeursDe,
+  valeursDuProduit,
+  AXES,
+  SANS_VALEUR,
+} from '@/core/catalogue/facettes';
 import { contextFor } from './helpers/context';
 import { seedFixture, type Fixture } from './helpers/fixtures';
 import type { AppContext } from '@/core/services/context';
@@ -247,6 +255,93 @@ describe('import', () => {
     });
   });
 
+  describe('référence partagée par plusieurs appareils', () => {
+    /**
+     * Le cas signalé par le client : une référence de cache-écran désigne UN
+     * article, qui s'adapte à plusieurs téléphones. Il écrit une ligne par
+     * compatibilité, l'appareil visé dans la colonne « Marque ».
+     */
+    const feuille: SheetData = {
+      name: 'Verre trempé',
+      headers: ['Marque', 'Modèle', 'Type', 'Réference interne', 'Prix de vente', 'Quantité'],
+      rows: [
+        ['Samsung S23 Ultra', 'Standard 9H', 'Verre', 'VT-STD-9H', '15000', '3'],
+        ['Iphone 12 Pro Max', 'Standard 9H', 'Verre', 'VT-STD-9H', '15000', '4'],
+      ],
+    };
+
+    it('accepte la référence répétée au lieu de rejeter la seconde ligne', async () => {
+      const plan = await importer(feuille, 'cache-ecrans');
+      expect(plan.report.counts.ERROR).toBe(0);
+      expect(plan.report.rows[1]?.warnings.join(' ')).toMatch(/quantités sont cumulées/);
+    });
+
+    it("n'en fait qu'un seul article, et cumule les quantités", async () => {
+      const resultat = await service.apply(await importer(feuille, 'cache-ecrans'));
+      expect(resultat.created).toBe(1);
+
+      const depot = new ProductRepository(fixture.db);
+      const produit = await depot.bySku('VT-STD-9H');
+      expect(produit).not.toBeNull();
+      const page = await depot.search({ shopId: fixture.shopA, query: 'standard 9h' });
+      expect(page.items[0]?.available).toBe(7);
+    });
+
+    it("retire l'appareil du nom et le range en compatibilité", async () => {
+      await service.apply(await importer(feuille, 'cache-ecrans'));
+      const produit = await new ProductRepository(fixture.db).bySku('VT-STD-9H');
+      // Sans cela, un verre qui va sur dix téléphones s'appellerait du nom du
+      // premier rencontré.
+      expect(produit?.name).toBe('Standard 9H Verre');
+      expect(produit?.attributes['compatibilite']).toBe('Samsung S23 Ultra, Iphone 12 Pro Max');
+    });
+
+    it('signale un prix de vente qui change d’une ligne à l’autre', async () => {
+      const plan = await importer(
+        {
+          ...feuille,
+          rows: [
+            ['Samsung S23 Ultra', 'Standard 9H', 'Verre', 'VT-STD-9H', '15000', '3'],
+            ['Iphone 12 Pro Max', 'Standard 9H', 'Verre', 'VT-STD-9H', '18000', '4'],
+          ],
+        },
+        'cache-ecrans',
+      );
+      expect(plan.report.counts.ERROR).toBe(0);
+      expect(plan.report.rows[1]?.warnings.join(' ')).toMatch(/Prix de vente différents/);
+    });
+
+    it('garde la marque au nom quand la référence ne sert qu’une fois', async () => {
+      const plan = await importer(
+        {
+          ...feuille,
+          rows: [['Samsung S23 Ultra', 'Standard 9H', 'Verre', 'VT-STD-9H', '15000', '3']],
+        },
+        'cache-ecrans',
+      );
+      expect(plan.report.rows[0]?.product?.name).toBe('Samsung S23 Ultra Standard 9H Verre');
+      expect(plan.report.rows[0]?.product?.attributes['compatibilite']).toBeUndefined();
+    });
+
+    it('importe le vrai fichier de cache-écrans sans aucune erreur', async () => {
+      const reelle = readSheet(charger('Cache écrans.xlsx'), 'Verre trempé');
+      const plan = await service.plan(
+        reelle,
+        suggestMapping(reelle.headers),
+        'CREATE_ONLY',
+        'Cache écrans.xlsx',
+        'cache-ecrans',
+      );
+      expect(plan.report.counts.ERROR).toBe(0);
+      const resultat = await service.apply(plan);
+      expect(resultat.errors).toBe(0);
+
+      const produit = await new ProductRepository(fixture.db).bySku('VT-STD-9H');
+      expect(produit?.attributes['compatibilite']).toContain('Samsung S23 Ultra');
+      expect(produit?.attributes['compatibilite']).toContain('Iphone 12 Pro Max');
+    });
+  });
+
   describe('parcours au comptoir', () => {
     /**
      * Le scénario décrit par le client, de bout en bout : on importe la vraie
@@ -332,6 +427,66 @@ describe('critères de descente', () => {
       capacity: valeurs['capacity'] ?? null,
       attributes: attributs,
     }) as never;
+
+  describe('ordre selon le rayon', () => {
+    it('propose la marque en premier pour les smartphones', () => {
+      expect(axesPour('Smartphones')[0]?.cle).toBe('marque');
+      expect(axesPour('Smartphones')[1]?.cle).toBe('capacite');
+    });
+
+    it('propose le type en premier pour les cache-écrans', () => {
+      // C'est la question posée au comptoir : « verre ou hydrogel ? »
+      expect(axesPour('Cache-écrans')[0]?.cle).toBe('type');
+      expect(axesPour('Cache-écrans')[1]?.cle).toBe('compatibilite');
+    });
+
+    it('propose la puissance après la marque pour les boîtiers', () => {
+      expect(
+        axesPour('Boitiers')
+          .slice(0, 2)
+          .map((axe) => axe.cle),
+      ).toEqual(['marque', 'puissance']);
+    });
+
+    it("garde l'ordre par défaut pour un rayon qu'on ne reconnaît pas", () => {
+      expect(axesPour('Divers')).toEqual(AXES);
+      expect(axesPour(null)).toEqual(AXES);
+    });
+
+    it('ne perd aucun critère en réordonnant', () => {
+      for (const rayon of ['Smartphones', 'Cache-écrans', 'Housses', 'Câbles', 'Powerbank']) {
+        const ordre = axesPour(rayon);
+        expect(ordre, rayon).toHaveLength(AXES.length);
+        expect(new Set(ordre.map((axe) => axe.cle)), rayon).toEqual(
+          new Set(AXES.map((axe) => axe.cle)),
+        );
+      }
+    });
+  });
+
+  describe('compatibilité multiple', () => {
+    const axe = AXES.find((element) => element.cle === 'compatibilite')!;
+
+    it('découpe la liste des appareils compatibles', () => {
+      const verre = article({}, { compatibilite: 'Samsung S23 Ultra, Iphone 12 Pro Max' });
+      expect(valeursDuProduit(verre, axe)).toEqual(['Samsung S23 Ultra', 'Iphone 12 Pro Max']);
+    });
+
+    it('fait apparaître un même article sous chacun de ses appareils', () => {
+      const verre = article({}, { compatibilite: 'Samsung S23 Ultra, Iphone 12 Pro Max' });
+      const housse = article({}, { compatibilite: 'Iphone 12 Pro Max' });
+      const lot = [verre, housse];
+
+      expect(valeursDe(lot, axe)).toEqual(['Iphone 12 Pro Max', 'Samsung S23 Ultra']);
+      expect(filtrer(lot, [{ axe, valeur: 'Iphone 12 Pro Max' }])).toHaveLength(2);
+      expect(filtrer(lot, [{ axe, valeur: 'Samsung S23 Ultra' }])).toEqual([verre]);
+    });
+  });
+
+  it('ne découpe plus un lot réduit à un seul article', () => {
+    // Un écran de choix devant un article unique ne fait perdre qu'un clic.
+    expect(axeSeparant([article({ brand: 'Apple' }, { type: 'Verre' })], [])).toBeNull();
+  });
 
   it('ignore un critère que tous les articles partagent', () => {
     const lot = [
