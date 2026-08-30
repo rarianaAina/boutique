@@ -65,6 +65,14 @@ export function Caisse() {
   /** Produit dont on choisit la déclinaison et l'exemplaire. */
   const [choix, setChoix] = useState<Product | null>(null);
   const champRecherche = useRef<HTMLInputElement>(null);
+  /**
+   * Un rayon est ouvert dans le navigateur.
+   *
+   * Tant qu'il l'est, la recherche lui appartient : elle porte sur le chemin
+   * parcouru et non sur tout le magasin. Chercher partout se fait en revenant
+   * aux catégories, d'un clic sur le fil d'Ariane.
+   */
+  const [cheminOuvert, setCheminOuvert] = useState(false);
 
   const peutRemiser = peut(PERMISSIONS.saleDiscount);
   // La page peut être ouverte sans le droit d'encaisser — consulter un prix au
@@ -75,9 +83,15 @@ export function Caisse() {
   const resultats = useChargement(async () => {
     if (!db || rechercheDifferee.trim().length < 2) return { produits: [], unite: null };
     const unites = new UnitRepository(db);
-    // Un identifiant exact l'emporte : c'est un scan, pas une recherche.
+    // Un identifiant exact l'emporte : c'est un scan, pas une recherche. Il
+    // reste GLOBAL même dans un rayon ouvert — un appareil qu'on scanne se vend,
+    // d'où qu'il vienne dans le magasin.
     const unite = await unites.byIdentifier(rechercheDifferee);
     if (unite && unite.shopId === shopId) return { produits: [], unite };
+
+    // Dans un rayon ouvert, c'est le navigateur qui filtre : inutile
+    // d'interroger tout le catalogue à chaque frappe.
+    if (cheminOuvert) return { produits: [], unite: null };
 
     const page = await new ProductRepository(db).search({
       shopId,
@@ -85,7 +99,7 @@ export function Caisse() {
       limit: 30,
     });
     return { produits: page.items, unite: null };
-  }, [db, shopId, rechercheDifferee]);
+  }, [db, shopId, rechercheDifferee, cheminOuvert]);
 
   const ajouterUnite = useCallback(
     async (unite: ProductUnit, connu?: Product) => {
@@ -249,7 +263,11 @@ export function Caisse() {
             ref={champRecherche}
             value={recherche}
             onChange={(evenement) => setRecherche(evenement.target.value)}
-            placeholder="Scanner un IMEI ou un code-barres, ou chercher un produit…   (F2)"
+            placeholder={
+              cheminOuvert
+                ? 'Scanner un IMEI, ou chercher dans ce rayon…   (F2)'
+                : 'Scanner un IMEI ou un code-barres, ou chercher un produit…   (F2)'
+            }
             className="h-12 w-full rounded-lg border border-encre-300 bg-white pl-10 pr-3 text-base shadow-carte placeholder:text-encre-400 focus:border-marque-500"
           />
         </div>
@@ -257,12 +275,17 @@ export function Caisse() {
         {erreur ? <Erreur message={erreur} /> : null}
 
         <Carte compact className="flex min-h-0 flex-1 flex-col">
-          {recherche.trim().length < 2 ? (
+          {cheminOuvert || recherche.trim().length < 2 ? (
             /* Tant qu'on n'a rien tapé, le catalogue se PARCOURT. Exiger une
                recherche bloquait la vente d'un article dont le vendeur ne
                connaît ni le nom exact ni la référence — un cache-écran, une
-               housse — et le scanner ne sert à rien sur ces produits-là. */
-            <NavigationCatalogue onChoisir={ouvrirChoix} />
+               housse — et le scanner ne sert à rien sur ces produits-là.
+               Une fois un rayon ouvert, c'est lui qui reçoit la recherche. */
+            <NavigationCatalogue
+              onChoisir={ouvrirChoix}
+              recherche={recherche}
+              onChemin={setCheminOuvert}
+            />
           ) : resultats.donnees && resultats.donnees.produits.length === 0 ? (
             <Vide
               icone="boite"
