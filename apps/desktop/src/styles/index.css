@@ -147,6 +147,20 @@
     font-weight: 600;
   }
 
+  /* Boîtes de dialogue.
+
+     Le navigateur centre un `<dialog>` modal grâce à `margin: auto` de sa
+     feuille de style par défaut. Or le preflight de Tailwind remet `margin: 0`
+     sur TOUS les éléments : sans la règle ci-dessous, chaque boîte se colle en
+     haut à gauche de l'écran. On rétablit donc le centrage explicitement.
+
+     `max-height` laisse le contenu défiler à l'intérieur plutôt que de faire
+     déborder la boîte hors de la fenêtre sur un petit écran de comptoir. */
+  dialog {
+    margin: auto;
+    max-height: calc(100dvh - 4rem);
+  }
+
   /* Un anneau de focus VISIBLE : l'application se pilote au clavier au comptoir. */
   :focus-visible {
     outline: 2px solid var(--color-marque-500);
