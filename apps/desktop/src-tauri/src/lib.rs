@@ -24,6 +24,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0002_variantes.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "historique des prix : décisions commerciales et cours constatés",
+            sql: include_str!("../migrations/0003_historique_prix.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

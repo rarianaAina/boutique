@@ -21,7 +21,7 @@ import type { SqlExecutor } from '@/core/db/client';
  * au démarrage. Les lister à la main plutôt que de balayer le dossier serait
  * la garantie d'en oublier une le jour où on en ajoute.
  */
-const MIGRATIONS = ['0001_init.sql', '0002_variantes.sql'].map((nom) =>
+const MIGRATIONS = ['0001_init.sql', '0002_variantes.sql', '0003_historique_prix.sql'].map((nom) =>
   fileURLToPath(new URL(`../../src-tauri/migrations/${nom}`, import.meta.url)),
 );
 

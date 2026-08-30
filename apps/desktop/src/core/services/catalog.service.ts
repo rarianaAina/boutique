@@ -13,9 +13,14 @@ import { ProductRepository, type ProductInput } from '../db/repositories/product
 import { SupplierRepository, type SupplierInput } from '../db/repositories/supplier.repository';
 import { CategoryRepository } from '../db/repositories/category.repository';
 import { OutboxRepository } from '../db/repositories/outbox.repository';
+import {
+  PriceHistoryRepository,
+  type PriceKind,
+} from '../db/repositories/price-history.repository';
 import { AUDIT_ACTIONS } from '../db/repositories/audit.repository';
 import { AuditService } from './audit.service';
 import { BusinessError, assertCan, type AppContext } from './context';
+import type { SqlExecutor } from '../db/client';
 
 /**
  * Catalogue : produits, fournisseurs, catégories.
@@ -68,6 +73,9 @@ export class ProductService {
     let id = '';
     await this.context.db.transaction(async (tx) => {
       id = await new ProductRepository(tx).create(complet);
+      // Point de départ de l'historique : sans lui, la première variation
+      // partirait de nulle part et la courbe commencerait au deuxième prix.
+      await this.recordPrices(tx, id, null, complet, 'MANUAL');
       await new OutboxRepository(tx).enqueue({
         type: SYNC_EVENT.productCreated,
         entity: 'product',
@@ -116,6 +124,7 @@ export class ProductService {
 
     await this.context.db.transaction(async (tx) => {
       await new ProductRepository(tx).update(id, complet);
+      await this.recordPrices(tx, id, before, complet, 'MANUAL');
       await new OutboxRepository(tx).enqueue({
         type: SYNC_EVENT.productUpdated,
         entity: 'product',
@@ -145,6 +154,46 @@ export class ProductService {
         },
       );
     });
+  }
+
+  /**
+   * Consigne les prix qui ont changé.
+   *
+   * Les trois prix sont traités séparément : baisser un prix de vente et subir
+   * une hausse du prix d'achat sont deux événements distincts, et les fondre en
+   * une seule ligne rendrait l'historique inexploitable.
+   *
+   * Un prix inchangé n'écrit rien — le dépôt s'en assure.
+   */
+  private async recordPrices(
+    tx: SqlExecutor,
+    productId: string,
+    avant: Pick<Product, 'purchasePrice' | 'salePrice' | 'minPrice'> | null,
+    apres: ProductInput,
+    source: 'MANUAL' | 'IMPORT',
+  ): Promise<void> {
+    const historique = new PriceHistoryRepository(tx);
+    const acteur = this.context.session;
+
+    const points: { kind: PriceKind; ancien: number | null; nouveau: number | null }[] = [
+      { kind: 'PURCHASE', ancien: avant?.purchasePrice ?? null, nouveau: apres.purchasePrice },
+      { kind: 'SALE', ancien: avant?.salePrice ?? null, nouveau: apres.salePrice },
+      { kind: 'MIN', ancien: avant?.minPrice ?? null, nouveau: apres.minPrice ?? null },
+    ];
+
+    for (const point of points) {
+      if (point.nouveau === null) continue;
+      await historique.record({
+        productId,
+        kind: point.kind,
+        oldValue: point.ancien,
+        newValue: point.nouveau,
+        source,
+        shopId: this.context.shopId,
+        userId: acteur?.id ?? null,
+        userLabel: acteur?.fullName ?? null,
+      });
+    }
   }
 
   /**
@@ -219,6 +268,10 @@ export class ProductService {
 
     await this.context.db.transaction(async (tx) => {
       await tx.execute('DELETE FROM stock_level WHERE product_id = ?', [id]);
+      // L'historique des prix référence le produit. Ce n'est PAS un document
+      // comptable — c'est une donnée dérivée du produit lui-même — donc il
+      // disparaît avec lui plutôt que d'empêcher sa suppression.
+      await tx.execute('DELETE FROM price_history WHERE product_id = ?', [id]);
       await tx.execute(
         `DELETE FROM sync_outbox WHERE entity = 'product' AND entity_id = ? AND status = 'PENDING'`,
         [id],

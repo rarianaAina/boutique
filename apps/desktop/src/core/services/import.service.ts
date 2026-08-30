@@ -505,6 +505,8 @@ export class ImportService {
       // Mise à jour SEULEMENT si l'utilisateur l'a demandée : c'est la règle
       // « ne jamais écraser en silence » du §8.
       if (mode !== 'CREATE_ONLY') {
+        // `ProductService.update` consigne lui-même les prix modifiés : le
+        // faire ici en plus créerait deux points pour un seul changement.
         await service.update(existing.id, input);
         result.updated += 1;
       }

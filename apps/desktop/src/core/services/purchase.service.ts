@@ -13,6 +13,7 @@ import {
 } from '../db/repositories/purchase.repository';
 import { ProductRepository } from '../db/repositories/product.repository';
 import { CounterRepository } from '../db/repositories/counter.repository';
+import { PriceHistoryRepository } from '../db/repositories/price-history.repository';
 import { AUDIT_ACTIONS } from '../db/repositories/audit.repository';
 import { AuditService } from './audit.service';
 import { StockService, type UnitDraft } from './stock.service';
@@ -289,6 +290,32 @@ export class PurchaseService {
 
     let receiptId = '';
     await this.context.db.transaction(async (tx) => {
+      // Le prix RÉELLEMENT payé est consigné à la réception, pas à la commande :
+      // c'est là qu'on connaît le coût complet, frais logistiques ventilés
+      // compris. C'est ce chiffre — et non le prix catalogue — qui reflète le
+      // cours du fournisseur.
+      const historique = new PriceHistoryRepository(tx);
+      for (const ligne of requested) {
+        const purchaseLine = byId.get(ligne.purchaseLineId);
+        if (!purchaseLine) continue;
+        await historique.record({
+          productId: purchaseLine.productId,
+          kind: 'OBSERVED_PURCHASE',
+          newValue: unitCostOf(purchaseLine),
+          source: 'PURCHASE',
+          sourceId: purchaseId,
+          sourceLabel: detail.purchase.number,
+          supplierId: detail.purchase.supplierId,
+          shopId: this.context.shopId,
+          userId,
+          userLabel: this.context.session?.fullName ?? null,
+          note:
+            purchaseLine.allocatedCost > 0
+              ? `Frais logistiques ventilés inclus (${purchaseLine.allocatedCost}).`
+              : null,
+        });
+      }
+
       receiptId = await new PurchaseRepository(tx).recordReceipt(
         tx,
         { purchaseId, shopId: this.context.shopId, userId, note: note ?? null },
