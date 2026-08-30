@@ -1,0 +1,42 @@
+# Déploiement du serveur de synchronisation sur Fly.io.
+#
+# À lancer depuis la RACINE du dépôt :
+#   fly launch --config apps/sync-server/fly.toml --no-deploy
+#   fly volumes create donnees --size 1
+#   fly secrets set BOUTIQUES="…" ADMIN_PASSWORD="…"
+#   fly deploy
+app = "synchro-boutique"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "apps/sync-server/Dockerfile"
+
+[env]
+  PORT = "4310"
+  SYNC_DB = "/donnees/sync.db"
+  BACKUP_DIR = "/donnees/sauvegardes"
+  BACKUP_HOURS = "6"
+  BACKUP_KEEP = "14"
+
+# Le journal doit survivre aux redémarrages : sans ce volume, l'ordre des
+# événements repartirait de zéro et les postes resteraient bloqués.
+[mounts]
+  source = "donnees"
+  destination = "/donnees"
+
+[http_service]
+  internal_port = 4310
+  force_https = true
+  # PAS d'arrêt automatique : une machine endormie répondrait à la première
+  # synchronisation de la journée après trente secondes, et le gérant croirait
+  # à une panne.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.checks.sante]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/sante"
+    timeout = "5s"

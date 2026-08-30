@@ -1,0 +1,41 @@
+# Déploiement du serveur de synchronisation sur Render.
+#
+# Ce fichier suffit : Render le lit, construit l'image, attache le disque et
+# publie le service avec son certificat. Rien à préparer sur une machine.
+#
+# Les valeurs marquées `sync: false` sont à renseigner UNE FOIS dans leur
+# interface — elles ne figurent pas ici parce que ce sont des secrets, et qu'un
+# secret dans un dépôt est un secret perdu.
+services:
+  - type: web
+    name: synchro-boutique
+    runtime: docker
+    dockerfilePath: ./apps/sync-server/Dockerfile
+    dockerContext: .
+    plan: starter
+    region: frankfurt
+    # Render interroge cette route pour savoir si le service répond, et le
+    # relance sinon.
+    healthCheckPath: /sante
+    disk:
+      name: donnees
+      mountPath: /donnees
+      sizeGB: 1
+    envVars:
+      - key: PORT
+        value: 4310
+      - key: SYNC_DB
+        value: /donnees/sync.db
+      - key: BACKUP_DIR
+        value: /donnees/sauvegardes
+      - key: BACKUP_HOURS
+        value: 6
+      - key: BACKUP_KEEP
+        value: 14
+      # Lignes d'enrôlement produites par chaque boutique, séparées par une
+      # virgule. Voir apps/sync-server/DEPLOIEMENT.md.
+      - key: BOUTIQUES
+        sync: false
+      # Mot de passe de la page /admin. Vide : la page n'existe pas.
+      - key: ADMIN_PASSWORD
+        sync: false
