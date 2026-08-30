@@ -1,4 +1,4 @@
-# Boutique — gestion hors ligne de boutiques de téléphonie et d'informatique
+# MOBI STOCK — gestion hors ligne de boutiques de téléphonie et d'informatique
 
 Logiciel de gestion pour des boutiques vendant smartphones, accessoires
 électroniques et matériel informatique. Il fonctionne **entièrement hors
@@ -455,7 +455,7 @@ permutation au démarrage suivant : écraser une base ouverte la corromprait.
 ## Tests
 
 ```
-301 tests · 23 fichiers
+307 tests · 24 fichiers
 ```
 
 L'intégration continue ([`.github/workflows/build.yml`](.github/workflows/build.yml))
@@ -484,6 +484,25 @@ boutique ayant sa propre base. Ce qui n'a pas été synchronisé n'existe donc
 réellement pas chez le voisin.
 
 ---
+
+## Identité visuelle
+
+Les icônes de l'application sont dérivées du logo (`examples/`), emblème seul :
+un nom de marque est illisible à 32 px. Chaque taille est **redessinée**, jamais
+rééchantillonnée depuis la plus grande.
+
+Deux réglages de `tauri.conf.json` ne se touchent pas à la légère, et
+[`lib.rs`](apps/desktop/src-tauri/src/lib.rs) le rappelle :
+
+| Réglage       | Conséquence                                                                                                                                                                                                                               |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `identifier`  | le dossier de données locales en dépend. Le changer **orphelinerait la base** de chaque poste installé, avec les ventes non encore synchronisées qu'elle contient. Le nom affiché se règle par `productName`, sans effet sur les données. |
+| `bundle.icon` | doit comporter un `.ico`. NSIS et MSI ne cherchent d'icône **que** dans cette liste, et la compilation échoue en fin de parcours sur `Couldn't find a .ico icon`.                                                                         |
+
+Six vérifications gardent ces deux points
+([`empaquetage.test.ts`](apps/desktop/tests/empaquetage.test.ts)) : elles coûtent
+quelques millisecondes, contre dix minutes d'intégration continue pour découvrir
+le défaut autrement.
 
 ## Compilation et distribution
 
