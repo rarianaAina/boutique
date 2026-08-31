@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/Page';
 import { Badge } from '@/components/ui/Badge';
 import { Bouton } from '@/components/ui/Bouton';
+import { Onglets } from '@/components/ui/Onglets';
 import { Dialogue } from '@/components/ui/Dialogue';
 import { Champ, Liste, Case } from '@/components/ui/Champ';
 import { Tableau } from '@/components/ui/Tableau';
@@ -77,22 +78,14 @@ export function Utilisateurs() {
         }
       />
 
-      <div className="mb-3 flex gap-1 border-b border-encre-200">
-        {(['utilisateurs', 'roles'] as const).map((cle) => (
-          <button
-            key={cle}
-            type="button"
-            onClick={() => setOnglet(cle)}
-            className={`border-b-2 px-3 py-1.5 text-sm ${
-              onglet === cle
-                ? 'border-marque-600 font-medium text-marque-700'
-                : 'border-transparent text-encre-600 hover:text-encre-900'
-            }`}
-          >
-            {cle === 'utilisateurs' ? 'Utilisateurs' : 'Rôles et accès aux pages'}
-          </button>
-        ))}
-      </div>
+      <Onglets
+        valeur={onglet}
+        onChanger={setOnglet}
+        onglets={[
+          { valeur: 'utilisateurs' as const, libelle: 'Utilisateurs' },
+          { valeur: 'roles' as const, libelle: 'Rôles et accès aux pages' },
+        ]}
+      />
 
       {onglet === 'roles' ? (
         <Information>
