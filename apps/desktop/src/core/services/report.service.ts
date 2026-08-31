@@ -28,6 +28,11 @@ export interface DashboardFigures {
   marginMonth: Money;
   refundsToday: Money;
   averageBasket: Money;
+  /** Ce qui est ENTRÉ en stock sur la période, et ce qu'il a coûté. */
+  arrivalsUnits: number;
+  arrivalsCost: Money;
+  /** Chiffre d'affaires jour par jour, pour la courbe. */
+  byDay: SalesReportRow[];
   stockUnits: number;
   stockValue: Money;
   lowStockCount: number;
@@ -82,30 +87,46 @@ export class ReportService {
    * Une seule méthode plutôt que dix appels séparés : l'écran d'accueil doit
    * s'afficher d'un coup, pas se remplir case par case.
    */
-  async dashboard(lowStockFallback = 3): Promise<DashboardFigures> {
-    const today = ReportService.today();
+  /**
+   * Chiffres du tableau de bord, pour une période choisie.
+   *
+   * `period` remplace le « aujourd'hui » qui était figé : un gérant qui ouvre
+   * son poste le lundi veut voir le week-end, pas une journée qui commence.
+   * Le mois en cours reste calculé à part — c'est le repère qu'on garde sous
+   * les yeux quelle que soit la fenêtre consultée.
+   *
+   * Ce qui NE dépend PAS de la période — stock, alertes, transferts en cours,
+   * file de synchronisation — décrit l'état présent et se lit toujours au
+   * même endroit.
+   */
+  async dashboard(lowStockFallback = 3, period?: Period): Promise<DashboardFigures> {
+    const fenetre = period ?? ReportService.today();
     const month = ReportService.thisMonth();
 
-    const [todayFigures, monthFigures, refunds, stock, lowStock, transfers, sync] =
+    const [figures, monthFigures, refunds, stock, lowStock, transfers, sync, arrivals, byDay] =
       await Promise.all([
-        this.salesTotals(today),
+        this.salesTotals(fenetre),
         this.salesTotals(month),
-        this.refundTotal(today),
+        this.refundTotal(fenetre),
         this.stockValue(),
         this.lowStockCount(lowStockFallback),
         this.pendingTransfers(),
         this.syncCounts(),
+        this.arrivalTotals(fenetre),
+        this.salesByDay(fenetre),
       ]);
 
     return {
-      revenueToday: todayFigures.revenue,
+      revenueToday: figures.revenue,
       revenueMonth: monthFigures.revenue,
-      salesToday: todayFigures.count,
-      marginToday: todayFigures.margin,
+      salesToday: figures.count,
+      marginToday: figures.margin,
       marginMonth: monthFigures.margin,
       refundsToday: refunds,
-      averageBasket:
-        todayFigures.count > 0 ? Math.round(todayFigures.revenue / todayFigures.count) : 0,
+      averageBasket: figures.count > 0 ? Math.round(figures.revenue / figures.count) : 0,
+      arrivalsUnits: arrivals.units,
+      arrivalsCost: arrivals.cost,
+      byDay,
       stockUnits: stock.units,
       stockValue: stock.value,
       lowStockCount: lowStock,
@@ -333,6 +354,24 @@ export class ReportService {
       [this.shopId, period.from, period.to],
     );
     return rows[0]?.total ?? 0;
+  }
+
+  /**
+   * Ce qui est entré en stock sur une période.
+   *
+   * Les seules ENTRÉES : `quantity > 0`. Un inventaire qui corrige à la baisse
+   * et une vente sont des sorties, et les compter ici gonflerait un chiffre
+   * censé dire « ce que j'ai reçu ».
+   */
+  async arrivalTotals(period: Period): Promise<{ units: number; cost: Money }> {
+    const rows = await this.db.select<{ units: number; cost: number }>(
+      `SELECT COALESCE(SUM(quantity), 0) AS units,
+              COALESCE(SUM(quantity * COALESCE(unit_cost, 0)), 0) AS cost
+         FROM stock_movement
+        WHERE shop_id = ? AND quantity > 0 AND occurred_at >= ? AND occurred_at < ?`,
+      [this.shopId, period.from, period.to],
+    );
+    return { units: rows[0]?.units ?? 0, cost: rows[0]?.cost ?? 0 };
   }
 
   async stockValue(): Promise<{ units: number; value: Money }> {
