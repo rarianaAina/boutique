@@ -1,12 +1,5 @@
 import { useState } from 'react';
-import {
-  MOVEMENT_LABELS,
-  MOVEMENT_TYPE,
-  localDay,
-  addDays,
-  periodRange,
-  valuesOf,
-} from '@boutique/shared';
+import { MOVEMENT_LABELS, MOVEMENT_TYPE, valuesOf } from '@boutique/shared';
 import type { MovementType } from '@boutique/shared';
 import { StockRepository } from '@/core/db/repositories/stock.repository';
 import { toCsv, exportFileName } from '@/core/services/export.service';
@@ -14,6 +7,9 @@ import { Carte, EnTetePage, Erreur } from '@/components/ui/Page';
 import { Badge } from '@/components/ui/Badge';
 import { Bouton } from '@/components/ui/Bouton';
 import { BarreFiltres, ListeFiltre, Pagination, Tableau } from '@/components/ui/Tableau';
+import { ChoixPeriode, usePeriode } from '@/components/ui/Periode';
+import { Onglets } from '@/components/ui/Onglets';
+import { Arrivages } from './Arrivages';
 import { useSession } from '@/app/session';
 import { formaterDate, useChargement } from '@/app/hooks';
 import { telecharger } from '@/features/gestion/telechargement';
@@ -24,19 +20,22 @@ import { telecharger } from '@/features/gestion/telechargement';
  * C'est la mémoire du logiciel, et elle est en LECTURE SEULE : aucun bouton ne
  * permet de modifier ou de supprimer une ligne. Une correction s'écrit en
  * ajoutant un mouvement inverse, jamais en effaçant celui qui gêne.
+ *
+ * DEUX LECTURES DU MÊME JOURNAL, et il en fallait deux. Le détail répond à
+ * « qu'est-il arrivé à cet article ? ». Les ARRIVAGES répondent à « qu'est-ce
+ * qui est entré le 12 mars ? » — question à laquelle le détail ne répond pas,
+ * puisqu'un import de deux cents téléphones y occupe deux cents lignes et
+ * qu'on ne voit plus la livraison, seulement ses grains.
  */
 export function Mouvements() {
   const { db, shopId } = useSession();
+  const [vue, setVue] = useState<'arrivages' | 'detail'>('arrivages');
   const [type, setType] = useState('');
-  const [periode, setPeriode] = useState('30');
   const [offset, setOffset] = useState(0);
   const limite = 100;
 
-  const bornes = (() => {
-    const fin = localDay();
-    if (periode === 'tout') return { from: null, to: null };
-    return periodRange(addDays(fin, -Number(periode)), fin);
-  })();
+  const periode = usePeriode('30');
+  const bornes = periode.bornes;
 
   const etat = useChargement(async () => {
     if (!db) throw new Error('Base indisponible.');
@@ -48,7 +47,7 @@ export function Mouvements() {
       limit: limite,
       offset,
     });
-  }, [db, shopId, type, periode, offset]);
+  }, [db, shopId, type, bornes.from, bornes.to, offset]);
 
   const exporter = () => {
     if (!etat.donnees) return;
@@ -80,22 +79,23 @@ export function Mouvements() {
         }
       />
 
-      <Carte compact className="min-h-0 flex-1">
+      <Onglets
+        valeur={vue}
+        onChanger={(valeur) => {
+          setVue(valeur as 'arrivages' | 'detail');
+          setOffset(0);
+        }}
+        onglets={[
+          { valeur: 'arrivages', libelle: 'Arrivages' },
+          { valeur: 'detail', libelle: 'Détail des mouvements' },
+        ]}
+      />
+
+      {vue === 'arrivages' ? <Arrivages periode={periode} /> : null}
+
+      <Carte compact className={vue === 'detail' ? 'min-h-0 flex-1' : 'hidden'}>
         <BarreFiltres>
-          <ListeFiltre
-            valeur={periode}
-            onChanger={(valeur) => {
-              setPeriode(valeur);
-              setOffset(0);
-            }}
-            options={[
-              { valeur: '1', libelle: "Aujourd'hui" },
-              { valeur: '7', libelle: '7 derniers jours' },
-              { valeur: '30', libelle: '30 derniers jours' },
-              { valeur: '90', libelle: '90 derniers jours' },
-              { valeur: 'tout', libelle: "Tout l'historique" },
-            ]}
-          />
+          <ChoixPeriode etat={periode} />
           <ListeFiltre
             valeur={type}
             onChanger={(valeur) => {

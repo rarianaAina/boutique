@@ -77,6 +77,50 @@ export interface MovementQuery {
   offset?: number;
 }
 
+export interface ArrivalQuery {
+  shopId?: string | null;
+  /** Origine : IMPORT, PURCHASE, TRANSFER, INVENTORY, MANUAL… */
+  source?: string | null;
+  from?: string | null;
+  to?: string | null;
+  limit?: number;
+}
+
+/** Une livraison, telle qu'on la retrouve dans l'historique. */
+export interface ArrivalGroup {
+  /** Jour local de l'arrivage, AAAA-MM-JJ. */
+  day: string;
+  source: string;
+  sourceId: string | null;
+  /** Numéro de document ou nom de fichier, recopié à l'entrée. */
+  label: string | null;
+  firstAt: string;
+  lastAt: string;
+  /** Nombre de produits DISTINCTS. */
+  products: number;
+  /** Nombre de pièces, toutes lignes confondues. */
+  units: number;
+  /** Parmi elles, celles suivies à l'unité — un IMEI, un numéro de série. */
+  identified: number;
+  /** Coût total de l'arrivage, quand il est connu. */
+  cost: number;
+  userLabel: string | null;
+}
+
+interface ArrivalRow {
+  day: string;
+  source: string;
+  source_id: string;
+  label: string | null;
+  first_at: string;
+  last_at: string;
+  products: number;
+  units: number;
+  identified: number;
+  cost: number;
+  user_label: string | null;
+}
+
 /** Mouvement enrichi de quoi l'afficher sans jointure supplémentaire. */
 export interface MovementListItem extends StockMovement {
   productName: string;
@@ -198,6 +242,119 @@ export class StockRepository {
       })),
       total: totals[0]?.total ?? 0,
     };
+  }
+
+  /* ─── Arrivages ───────────────────────────────────────────────────────── */
+
+  /**
+   * Ce qui est ENTRÉ en stock, regroupé par arrivage.
+   *
+   * POURQUOI CE REGROUPEMENT. La liste des mouvements répond à « qu'est-il
+   * arrivé à cet article ? ». Elle ne répond pas à « qu'est-ce qui est arrivé
+   * le 12 mars ? » : un import de deux cents téléphones y occupe deux cents
+   * lignes, et l'on ne voit plus la livraison, seulement ses grains.
+   *
+   * Un arrivage est identifié par son ORIGINE — un fichier d'import, une
+   * réception de commande, un transfert reçu, une correction d'inventaire — et
+   * par le jour où il a eu lieu. Les colonnes `source` et `source_id` du
+   * journal des mouvements portent déjà cette identité, et un index les couvre.
+   *
+   * Le jour est calculé en heure LOCALE (`localtime`) et non en UTC : une
+   * livraison de 22 h à Antananarivo tomberait sinon au lendemain, et le gérant
+   * ne la trouverait pas à la date où il l'a reçue.
+   */
+  async arrivals(query: ArrivalQuery): Promise<ArrivalGroup[]> {
+    const conditions = ['m.quantity > 0'];
+    const params: unknown[] = [];
+    if (query.shopId) {
+      conditions.push('m.shop_id = ?');
+      params.push(query.shopId);
+    }
+    if (query.source) {
+      conditions.push('m.source = ?');
+      params.push(query.source);
+    }
+    if (query.from) {
+      conditions.push('m.occurred_at >= ?');
+      params.push(query.from);
+    }
+    if (query.to) {
+      conditions.push('m.occurred_at < ?');
+      params.push(query.to);
+    }
+
+    const rows = await this.db.select<ArrivalRow>(
+      `SELECT date(m.occurred_at, 'localtime')      AS day,
+              m.source                              AS source,
+              COALESCE(m.source_id, '')             AS source_id,
+              MIN(m.source_label)                   AS label,
+              MIN(m.occurred_at)                    AS first_at,
+              MAX(m.occurred_at)                    AS last_at,
+              COUNT(DISTINCT m.product_id)          AS products,
+              SUM(m.quantity)                       AS units,
+              -- Les appareils identifiés se comptent à part : ce sont eux
+              -- qu'on retrouve un par un, IMEI en main.
+              COUNT(m.unit_id)                      AS identified,
+              SUM(m.quantity * COALESCE(m.unit_cost, 0)) AS cost,
+              MIN(a.full_name)                      AS user_label
+         FROM stock_movement m
+         LEFT JOIN app_user a ON a.id = m.user_id
+        WHERE ${conditions.join(' AND ')}
+        GROUP BY day, m.source, COALESCE(m.source_id, '')
+        ORDER BY last_at DESC
+        LIMIT ?`,
+      [...params, Math.min(query.limit ?? 200, 1000)],
+    );
+
+    return rows.map((row) => ({
+      day: row.day,
+      source: row.source,
+      sourceId: row.source_id === '' ? null : row.source_id,
+      label: row.label,
+      firstAt: row.first_at,
+      lastAt: row.last_at,
+      products: row.products,
+      units: row.units,
+      identified: row.identified,
+      cost: row.cost,
+      userLabel: row.user_label,
+    }));
+  }
+
+  /**
+   * Le détail d'un arrivage : ce qui est entré, ligne par ligne.
+   *
+   * On cherche par origine ET par jour. Sans le jour, une origine réutilisée —
+   * une commande reçue en deux fois — mêlerait les deux livraisons, et l'écart
+   * constaté à la seconde deviendrait introuvable.
+   */
+  async arrivalDetail(
+    source: string,
+    sourceId: string | null,
+    day: string,
+  ): Promise<MovementListItem[]> {
+    const rows = await this.db.select<MovementRow & Record<string, string | null>>(
+      `SELECT m.*, p.name AS product_name, p.sku AS product_sku,
+              COALESCE(u.imei1, u.serial) AS identifier,
+              a.full_name AS user_label
+         FROM stock_movement m
+         JOIN product p ON p.id = m.product_id
+         LEFT JOIN v_unit u ON u.id = m.unit_id
+         LEFT JOIN app_user a ON a.id = m.user_id
+        WHERE m.quantity > 0 AND m.source = ?
+          AND COALESCE(m.source_id, '') = ?
+          AND date(m.occurred_at, 'localtime') = ?
+        ORDER BY p.name, m.occurred_at`,
+      [source, sourceId ?? '', day],
+    );
+
+    return rows.map((row) => ({
+      ...toMovement(row),
+      productName: row['product_name'] ?? '',
+      productSku: row['product_sku'] ?? '',
+      identifier: row['identifier'] ?? null,
+      userLabel: row['user_label'] ?? null,
+    }));
   }
 
   /** Historique complet d'un appareil (§23) : achat, transferts, vente, retour. */
