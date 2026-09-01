@@ -46,6 +46,9 @@ export const PERMISSIONS = {
   customerView: 'customer.view',
   customerManage: 'customer.manage',
 
+  /* Charges d'exploitation */
+  chargeManage: 'charge.manage',
+
   /* Transverse */
   shopManage: 'shop.manage',
   reportView: 'report.view',
@@ -89,6 +92,8 @@ export const PAGE_PERMISSIONS = {
   transferts: 'page.transferts',
   synchronisation: 'page.synchronisation',
   clients: 'page.clients',
+  charges: 'page.charges',
+  resultat: 'page.resultat',
   rapports: 'page.rapports',
   prix: 'page.prix',
   import: 'page.import',
@@ -129,6 +134,8 @@ export const PAGE_LABELS: Record<PagePermission, string> = {
   'page.transferts': 'Transferts',
   'page.synchronisation': 'Synchronisation',
   'page.clients': 'Clients',
+  'page.charges': 'Charges',
+  'page.resultat': 'Compte de résultat',
   'page.rapports': 'Rapports',
   'page.prix': 'Évolution des prix',
   'page.import': 'Import Excel',
@@ -171,6 +178,8 @@ export const PAGE_GROUPS: { title: string; pages: PagePermission[] }[] = [
     pages: [
       PAGE_PERMISSIONS.clients,
       PAGE_PERMISSIONS.rapports,
+      PAGE_PERMISSIONS.charges,
+      PAGE_PERMISSIONS.resultat,
       PAGE_PERMISSIONS.prix,
       PAGE_PERMISSIONS.import,
       PAGE_PERMISSIONS.journal,
@@ -226,6 +235,7 @@ export const PERMISSION_GROUPS: { title: string; permissions: Permission[] }[] =
     ],
   },
   { title: 'Clients', permissions: [PERMISSIONS.customerView, PERMISSIONS.customerManage] },
+  { title: "Charges d'exploitation", permissions: [PERMISSIONS.chargeManage] },
   {
     title: 'Administration',
     permissions: [
@@ -273,6 +283,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'sync.run': 'Lancer une synchronisation',
   'audit.view': "Consulter le journal d'audit",
   'backup.manage': 'Gérer les sauvegardes',
+  'charge.manage': 'Saisir et modifier les charges',
   'shop.manage': 'Créer et modifier les boutiques',
   ...PAGE_LABELS,
 };

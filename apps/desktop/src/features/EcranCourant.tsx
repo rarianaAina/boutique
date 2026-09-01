@@ -50,6 +50,8 @@ const Synchronisation = lazy(() =>
 );
 const Clients = lazy(() => import('./gestion/Clients').then((m) => ({ default: m.Clients })));
 const Rapports = lazy(() => import('./gestion/Rapports').then((m) => ({ default: m.Rapports })));
+const Charges = lazy(() => import('./gestion/Charges').then((m) => ({ default: m.Charges })));
+const Resultat = lazy(() => import('./gestion/Resultat').then((m) => ({ default: m.Resultat })));
 const Import = lazy(() => import('./gestion/Import').then((m) => ({ default: m.Import })));
 const Journal = lazy(() => import('./gestion/Journal').then((m) => ({ default: m.Journal })));
 const Utilisateurs = lazy(() =>
@@ -147,6 +149,10 @@ function Ecran({ cle, parametre }: { cle: CleEcran; parametre: string | null }) 
       return <Clients parametre={parametre} />;
     case 'rapports':
       return <Rapports />;
+    case 'charges':
+      return <Charges />;
+    case 'resultat':
+      return <Resultat />;
     case 'import':
       return <Import />;
     case 'journal':

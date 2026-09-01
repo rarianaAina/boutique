@@ -10,6 +10,7 @@
 import type { Money } from './money';
 import type { IsoDate } from './time';
 import type {
+  ChargeCategory,
   CostAllocation,
   IdentifierKind,
   ImportMode,
@@ -522,4 +523,25 @@ export interface PaymentMethod {
   isActive: boolean;
   changeAllowed: boolean;
   position: number;
+}
+
+/**
+ * Une charge d'exploitation : ce que la boutique dépense pour fonctionner.
+ *
+ * Distincte d'un achat de marchandise, qui passe par les achats et rejoint le
+ * résultat par le prix de revient des articles vendus. Sans ces lignes-ci, le
+ * logiciel ne connaîtrait que la marge sur marchandises — pas le bénéfice.
+ */
+export interface Charge extends Traceable {
+  id: string;
+  shopId: string;
+  category: ChargeCategory;
+  label: string;
+  amount: Money;
+  /** Date à laquelle la charge est ENGAGÉE, qui décide de sa période. */
+  occurredAt: IsoDate;
+  supplierId: string | null;
+  /** Numéro de la pièce justificative : facture, quittance, reçu. */
+  reference: string | null;
+  notes: string | null;
 }

@@ -29,6 +29,8 @@ export type CleEcran =
   | 'transferts'
   | 'clients'
   | 'rapports'
+  | 'charges'
+  | 'resultat'
   | 'utilisateurs'
   | 'parametres'
   | 'synchronisation'
@@ -214,6 +216,20 @@ export const NAVIGATION: Groupe[] = [
         titre: 'Rapports',
         icone: 'rapport',
         permission: PAGE_PERMISSIONS.rapports,
+        fonction: 'rapports',
+      },
+      {
+        cle: 'charges',
+        titre: 'Charges',
+        icone: 'achat',
+        permission: PAGE_PERMISSIONS.charges,
+        fonction: 'rapports',
+      },
+      {
+        cle: 'resultat',
+        titre: 'Compte de résultat',
+        icone: 'rapport',
+        permission: PAGE_PERMISSIONS.resultat,
         fonction: 'rapports',
       },
       {

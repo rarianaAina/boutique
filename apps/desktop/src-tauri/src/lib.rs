@@ -42,6 +42,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0005_identifiants_fiscaux.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 6,
+            description: "charges d'exploitation, pour un compte de résultat qui donne le bénéfice",
+            sql: include_str!("../migrations/0006_charges.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

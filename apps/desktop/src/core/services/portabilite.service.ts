@@ -32,15 +32,15 @@ export const FORMAT_ARCHIVE = 1;
  * tables ou les colonnes qu'elle porte n'existeraient pas encore ici. Refuser
  * vaut mieux que perdre la moitié des données en silence.
  */
-export const VERSION_STRUCTURE = 5;
+export const VERSION_STRUCTURE = 6;
 
 /**
  * Tables emportées, DANS L'ORDRE D'INSERTION.
  *
  * L'ordre suit les clés étrangères : une ligne ne s'insère jamais avant ce
- * qu'elle référence. C'est l'ordre de création du schéma, à une exception près
- * — `price_history`, ajoutée par une migration ultérieure, référence `product`,
- * `supplier` et `shop`, et se place donc après eux.
+ * qu'elle référence. C'est l'ordre de création du schéma, à deux exceptions
+ * près — `price_history` et `charge`, ajoutées par des migrations ultérieures,
+ * référencent `product`, `supplier` et `shop`, et se placent donc après eux.
  */
 export const TABLES_EXPORTEES = [
   'shop',
@@ -72,6 +72,7 @@ export const TABLES_EXPORTEES = [
   'inventory_session',
   'inventory_line',
   'price_history',
+  'charge',
   'audit_log',
   'sync_outbox',
   'sync_inbox',

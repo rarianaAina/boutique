@@ -326,3 +326,47 @@ export type ImportMode = Values<typeof IMPORT_MODE>;
 export function valuesOf<T extends Record<string, string>>(source: T): T[keyof T][] {
   return Object.values(source) as T[keyof T][];
 }
+
+/**
+ * Nature d'une charge d'exploitation.
+ *
+ * Une liste FERMÉE, et c'est ce qui la rend utile : un compte de résultat ne
+ * sert à décider de rien si les mêmes dépenses se retrouvent sous trois
+ * libellés différents selon qui les a saisies. `AUTRE` existe pour ne jamais
+ * bloquer une saisie — mais une catégorie qui s'y accumule signale qu'il en
+ * manque une.
+ *
+ * Les achats de MARCHANDISE n'y figurent pas : ils entrent par les achats, et
+ * leur coût rejoint le résultat par le prix de revient des articles vendus.
+ * Les compter ici les compterait deux fois.
+ */
+export const CHARGE_CATEGORY = {
+  rent: 'LOYER',
+  wages: 'SALAIRES',
+  utilities: 'ELECTRICITE_EAU',
+  telecom: 'TELECOM',
+  transport: 'TRANSPORT',
+  supplies: 'FOURNITURES',
+  maintenance: 'ENTRETIEN',
+  security: 'SECURITE',
+  advertising: 'PUBLICITE',
+  banking: 'BANQUE',
+  taxes: 'IMPOTS',
+  other: 'AUTRE',
+} as const;
+export type ChargeCategory = Values<typeof CHARGE_CATEGORY>;
+
+export const CHARGE_LABELS: Record<ChargeCategory, string> = {
+  LOYER: 'Loyer et charges locatives',
+  SALAIRES: 'Salaires et charges sociales',
+  ELECTRICITE_EAU: 'Électricité et eau',
+  TELECOM: 'Téléphone et internet',
+  TRANSPORT: 'Transport et carburant',
+  FOURNITURES: 'Fournitures et petit équipement',
+  ENTRETIEN: 'Entretien et réparations',
+  SECURITE: 'Gardiennage et sécurité',
+  PUBLICITE: 'Publicité et enseigne',
+  BANQUE: 'Frais bancaires et mobile money',
+  IMPOTS: 'Impôts et taxes',
+  AUTRE: 'Autres charges',
+};
