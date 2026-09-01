@@ -36,6 +36,9 @@ export const AUDIT_ACTIONS = {
   import: 'IMPORT',
   sync: 'SYNC',
   backup: 'BACKUP',
+  /** Archive complète du commerce, produite ou reprise. */
+  export: 'EXPORT',
+  restore: 'RESTORE',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS] | (string & {});

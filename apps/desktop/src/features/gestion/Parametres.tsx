@@ -21,6 +21,8 @@ import { Bouton } from '@/components/ui/Bouton';
 import { Champ, Case, Liste, ZoneTexte } from '@/components/ui/Champ';
 import { Confirmation } from '@/components/ui/Dialogue';
 import { AuthService } from '@/core/services/auth.service';
+import { PortabiliteService, type Archive } from '@/core/services/portabilite.service';
+import { lireFichier, telecharger } from './telechargement';
 import { Tableau } from '@/components/ui/Tableau';
 import { useNotifications } from '@/components/ui/Notifications';
 import { useContexte, useSession } from '@/app/session';
@@ -188,6 +190,8 @@ export function Parametres() {
       <Licence />
 
       <CleDeSecours />
+
+      <Portabilite />
 
       {!peutRegler ? <LectureSeule quoi="modifier les paramètres" /> : null}
 
@@ -499,6 +503,140 @@ function CleDeSecours() {
         occupe={occupe}
         onConfirmer={() => void renouveler()}
         onFermer={() => setConfirmation(false)}
+      />
+    </Carte>
+  );
+}
+
+/**
+ * Emporter ou reprendre un commerce.
+ *
+ * TROIS USAGES, un seul écran : changer d'ordinateur, passer à l'offre en
+ * ligne, en revenir. C'est aussi la sauvegarde qu'on emporte — celle qui
+ * survit à la panne de la machine, contrairement aux sauvegardes locales qui
+ * dorment sur le même disque.
+ */
+function Portabilite() {
+  const contexte = useContexte();
+  const { peut } = useSession();
+  const { notifier } = useNotifications();
+  const [occupe, setOccupe] = useState(false);
+  const [candidate, setCandidate] = useState<{ archive: Archive; vierge: boolean } | null>(null);
+
+  if (!peut(PERMISSIONS.settingsManage)) return null;
+
+  const exporter = async () => {
+    setOccupe(true);
+    try {
+      const archive = await new PortabiliteService(contexte).exporter();
+      const nom = `boutique-${archive.manifeste.boutique?.code ?? 'export'}-${archive.manifeste.exporteLe.slice(0, 10)}.json`;
+      const chemin = await telecharger(nom, JSON.stringify(archive), 'json');
+      if (chemin) {
+        const lignes = Object.values(archive.manifeste.comptes).reduce((s, n) => s + n, 0);
+        notifier(`Archive enregistrée : ${lignes.toLocaleString('fr-FR')} lignes.`);
+      }
+    } catch (cause) {
+      notifier(messageDe(cause), 'erreur');
+    } finally {
+      setOccupe(false);
+    }
+  };
+
+  const choisir = async () => {
+    setOccupe(true);
+    try {
+      const brut = await lireFichier(['json'], 'Archive de boutique');
+      if (!brut) return;
+      const service = new PortabiliteService(contexte);
+      const archive = JSON.parse(brut) as Archive;
+      // On VÉRIFIE avant de proposer : personne ne doit découvrir après coup
+      // que l'archive venait d'une version incompatible.
+      service.verifier(archive);
+      setCandidate({ archive, vierge: await service.baseVierge() });
+    } catch (cause) {
+      notifier(messageDe(cause), 'erreur');
+    } finally {
+      setOccupe(false);
+    }
+  };
+
+  const importer = async () => {
+    if (!candidate) return;
+    setOccupe(true);
+    try {
+      const rapport = await new PortabiliteService(contexte).importer(candidate.archive, {
+        remplacer: !candidate.vierge,
+      });
+      setCandidate(null);
+      notifier(
+        `${rapport.lignes.toLocaleString('fr-FR')} lignes reprises. Redémarrez l’application.`,
+      );
+    } catch (cause) {
+      notifier(messageDe(cause), 'erreur');
+    } finally {
+      setOccupe(false);
+    }
+  };
+
+  const manifeste = candidate?.archive.manifeste;
+
+  return (
+    <Carte titre="Emporter ou reprendre ce commerce">
+      <Information>
+        L’archive contient l’intégralité du commerce : catalogue, stock, ventes, clients, comptes.
+        Elle sert à changer d’ordinateur, à passer à l’offre en ligne, ou à en revenir. Elle
+        n’emporte NI la licence NI la clé de secours — la machine d’arrivée repart avec son propre
+        code d’installation.
+      </Information>
+
+      <Avertissement>
+        Ce fichier contient vos prix d’achat, vos clients et les empreintes des mots de passe.
+        Rangez-le comme vous rangeriez votre comptabilité.
+      </Avertissement>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Bouton icone="export" occupe={occupe} onClick={() => void exporter()}>
+          Exporter tout le commerce
+        </Bouton>
+        <Bouton icone="import" occupe={occupe} onClick={() => void choisir()}>
+          Reprendre une archive
+        </Bouton>
+      </div>
+
+      <Confirmation
+        ouvert={candidate !== null}
+        danger={!candidate?.vierge}
+        titre={candidate?.vierge ? 'Reprendre cette archive ?' : 'REMPLACER tout le commerce ?'}
+        libelleAction={candidate?.vierge ? 'Reprendre' : 'Remplacer définitivement'}
+        occupe={occupe}
+        message={
+          manifeste ? (
+            <div className="space-y-2">
+              <p>
+                Archive de <strong>{manifeste.boutique?.nom ?? 'boutique inconnue'}</strong>
+                {manifeste.boutique?.code ? ` (${manifeste.boutique.code})` : ''}, produite le{' '}
+                {formaterDate(manifeste.exporteLe, true)}.
+              </p>
+              <p>
+                {Object.values(manifeste.comptes)
+                  .reduce((somme, n) => somme + n, 0)
+                  .toLocaleString('fr-FR')}{' '}
+                lignes, dont {manifeste.comptes['sale'] ?? 0} vente(s) et{' '}
+                {manifeste.comptes['product'] ?? 0} produit(s).
+              </p>
+              {!candidate?.vierge ? (
+                <p className="font-medium text-danger-700">
+                  Cette base contient déjà un commerce. Il sera entièrement effacé et remplacé.
+                  L’opération est irréversible : exportez-le d’abord si vous tenez à le garder.
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            ''
+          )
+        }
+        onConfirmer={() => void importer()}
+        onFermer={() => setCandidate(null)}
       />
     </Carte>
   );
