@@ -21,6 +21,26 @@ jobs:
   verify:
     name: Types et tests
     runs-on: ubuntu-latest
+
+    # Le schéma Postgres est TRADUIT du SQLite, et l'épreuve de conformité
+    # vérifie que les deux structures restent identiques — la promesse sur
+    # laquelle repose la migration d'un commerçant hors ligne vers l'offre en
+    # ligne. Elle se saute d'elle-même sans base, ce qui garderait la suite
+    # locale rapide mais laisserait la garantie sans effet : on la fournit ici.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: conformite
+          POSTGRES_DB: boutique
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -47,6 +67,8 @@ jobs:
       # de production : ils éprouvent donc aussi les contraintes d'unicité, qui
       # sont l'essentiel de la protection des IMEI.
       - run: pnpm -r test
+        env:
+          DATABASE_URL: postgres://postgres:conformite@127.0.0.1:5432/boutique
 
       - run: pnpm exec prettier --check .
 
