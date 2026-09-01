@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Bouton } from '@/components/ui/Bouton';
 import { Champ, Case, Liste, ZoneTexte } from '@/components/ui/Champ';
 import { Confirmation } from '@/components/ui/Dialogue';
+import { AuthService } from '@/core/services/auth.service';
 import { Tableau } from '@/components/ui/Tableau';
 import { useNotifications } from '@/components/ui/Notifications';
 import { useContexte, useSession } from '@/app/session';
@@ -185,6 +186,8 @@ export function Parametres() {
           qu'on vient de lui envoyer, sinon le poste se ferme faute d'un
           réglage que personne sur place n'a le droit de toucher. */}
       <Licence />
+
+      <CleDeSecours />
 
       {!peutRegler ? <LectureSeule quoi="modifier les paramètres" /> : null}
 
@@ -430,5 +433,73 @@ export function Parametres() {
         message="Des boutiques, utilisateurs, produits, achats, ventes, transferts et échanges fictifs seront créés. L'opération est refusée si la base contient déjà des ventes réelles."
       />
     </div>
+  );
+}
+
+/**
+ * Renouvellement de la clé de secours.
+ *
+ * Le geste qu'on fait quand la clé a été égarée, ou qu'elle a circulé — dictée
+ * au téléphone, photographiée. L'ancienne cesse aussitôt de valoir, et la
+ * nouvelle ne s'affiche qu'une fois.
+ *
+ * Réservé à qui administre les comptes : c'est le pouvoir de reprendre le
+ * compte administrateur qui se renouvelle ici.
+ */
+function CleDeSecours() {
+  const contexte = useContexte();
+  const { peut } = useSession();
+  const { notifier } = useNotifications();
+  const [nouvelle, setNouvelle] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState(false);
+  const [occupe, setOccupe] = useState(false);
+
+  if (!peut(PERMISSIONS.userManage)) return null;
+
+  const renouveler = async () => {
+    setOccupe(true);
+    try {
+      setNouvelle(await new AuthService(contexte.db).renewRecoveryKey(contexte));
+      setConfirmation(false);
+    } catch (cause) {
+      notifier(messageDe(cause), 'erreur');
+    } finally {
+      setOccupe(false);
+    }
+  };
+
+  return (
+    <Carte titre="Clé de secours de l’administrateur">
+      <Information>
+        Cette clé est le seul moyen de rouvrir le logiciel si le dernier administrateur oublie son
+        mot de passe. Elle vous a été remise à l’installation. Si vous l’avez égarée, ou si elle a
+        circulé, produisez-en une nouvelle — l’ancienne cessera aussitôt de valoir.
+      </Information>
+
+      {nouvelle ? (
+        <div className="mt-3">
+          <Avertissement>
+            <strong>Notez cette clé hors de cet ordinateur.</strong> Elle ne sera plus affichée.
+          </Avertissement>
+          <p className="mono mt-2 select-all rounded-lg border-2 border-marque-300 bg-marque-50 px-4 py-3 text-center tracking-widest text-encre-900">
+            {nouvelle}
+          </p>
+        </div>
+      ) : (
+        <Bouton className="mt-3" occupe={occupe} onClick={() => setConfirmation(true)}>
+          Produire une nouvelle clé de secours
+        </Bouton>
+      )}
+
+      <Confirmation
+        ouvert={confirmation}
+        titre="Produire une nouvelle clé de secours ?"
+        message="L’ancienne clé cessera immédiatement de fonctionner. Assurez-vous de pouvoir noter la nouvelle : elle ne sera affichée qu’une seule fois."
+        libelleAction="Produire la clé"
+        occupe={occupe}
+        onConfirmer={() => void renouveler()}
+        onFermer={() => setConfirmation(false)}
+      />
+    </Carte>
   );
 }

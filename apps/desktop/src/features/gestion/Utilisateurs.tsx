@@ -15,6 +15,7 @@ import { RoleRepository } from '@/core/db/repositories/role.repository';
 import { ShopRepository } from '@/core/db/repositories/shop.repository';
 import { UserService } from '@/core/services/auth.service';
 import {
+  Avertissement,
   Carte,
   Chargement,
   EnTetePage,
@@ -59,6 +60,25 @@ export function Utilisateurs() {
     return { liste, roles, boutiques };
   }, [db]);
 
+  /*
+   * Combien d'administrateurs ACTIFS ?
+   *
+   * Comptés par la PERMISSION et non par le code du rôle : un rôle « Gérant »
+   * à qui l'on a donné la gestion des comptes administre tout autant, et c'est
+   * ce pouvoir-là qui compte pour ne pas s'enfermer dehors.
+   */
+  const administrateursActifs = (() => {
+    const donnees = utilisateurs.donnees;
+    if (!donnees) return null;
+    const roles = new Set(
+      donnees.roles
+        .filter((role) => role.permissions.includes(PERMISSIONS.userManage))
+        .map((role) => role.id),
+    );
+    return donnees.liste.filter((compte) => compte.status === 'ACTIVE' && roles.has(compte.roleId))
+      .length;
+  })();
+
   const nomRole = (roleId: string) =>
     utilisateurs.donnees?.roles.find((role) => role.id === roleId)?.name ?? '—';
   const nomBoutique = (shopId: string) =>
@@ -86,6 +106,14 @@ export function Utilisateurs() {
           { valeur: 'roles' as const, libelle: 'Rôles et accès aux pages' },
         ]}
       />
+
+      {onglet === 'utilisateurs' && administrateursActifs === 1 ? (
+        <Avertissement>
+          <strong>Un seul compte administrateur.</strong> S’il perd son mot de passe, seule la clé
+          de secours remise à l’installation permettra de rouvrir le logiciel. Créer un second
+          administrateur évite d’en dépendre.
+        </Avertissement>
+      ) : null}
 
       {onglet === 'roles' ? (
         <Information>

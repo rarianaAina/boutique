@@ -4,6 +4,8 @@ import { ShopRepository } from '../db/repositories/shop.repository';
 import { UserRepository } from '../db/repositories/user.repository';
 import { META_KEYS, MetaRepository } from '../db/repositories/meta.repository';
 import { checkPasswordStrength, hashPassword } from '../auth/password';
+import { genererCleSecours, normaliserCleSecours } from '../auth/cle-secours';
+import { POSTE_KEYS, SettingRepository } from '../db/repositories/setting.repository';
 import { BusinessError } from './context';
 import type { SqlExecutor } from '../db/client';
 
@@ -36,7 +38,7 @@ export class SetupService {
     return new UserRepository(this.db).isEmpty();
   }
 
-  async run(input: SetupInput): Promise<{ shopId: string; userId: string }> {
+  async run(input: SetupInput): Promise<{ shopId: string; userId: string; cleSecours: string }> {
     if (!(await this.needsSetup())) {
       throw new BusinessError("L'application est déjà installée.");
     }
@@ -82,7 +84,23 @@ export class SetupService {
     await ensurePaymentMethods(this.db);
     await new MetaRepository(this.db).set(META_KEYS.deviceId, newId());
 
-    return { shopId, userId };
+    /*
+     * Clé de secours de l'administrateur.
+     *
+     * Produite ICI, une seule fois, et RENDUE À L'APPELANT pour qu'il
+     * l'affiche : elle n'existera plus nulle part ensuite, seule son empreinte
+     * est conservée. C'est le seul moyen de rouvrir le logiciel si le dernier
+     * administrateur oublie son mot de passe — aucun serveur ne connaît cette
+     * base, et personne d'autre ne peut le débloquer.
+     */
+    const cleSecours = genererCleSecours();
+    await new SettingRepository(this.db).set(
+      POSTE_KEYS.recoveryHash,
+      await hashPassword(normaliserCleSecours(cleSecours)),
+      null,
+    );
+
+    return { shopId, userId, cleSecours };
   }
 }
 

@@ -4,6 +4,8 @@ import { UserRepository, type UserInput } from '../db/repositories/user.reposito
 import { RoleRepository } from '../db/repositories/role.repository';
 import { AUDIT_ACTIONS, AuditRepository } from '../db/repositories/audit.repository';
 import { checkPasswordStrength, hashPassword, needsRehash, verifyPassword } from '../auth/password';
+import { cleSecoursPlausible, genererCleSecours, normaliserCleSecours } from '../auth/cle-secours';
+import { POSTE_KEYS, SettingRepository } from '../db/repositories/setting.repository';
 import { BusinessError, assertCan, assertQuota, type AppContext } from './context';
 import type { SqlExecutor } from '../db/client';
 
@@ -104,6 +106,110 @@ export class AuthService {
     });
 
     return { session, rehashed };
+  }
+
+  /**
+   * Déblocage d'un administrateur par la clé de secours.
+   *
+   * SANS SESSION, ET C'EST TOUT SON OBJET : on l'appelle précisément parce que
+   * personne ne peut plus se connecter. Elle vit donc sur `AuthService`, à côté
+   * de `login`, et non sur `UserService` où tout exige déjà un droit.
+   *
+   * TROIS GARDES, chacune pour une raison distincte :
+   *
+   *   — le compte visé doit être ADMINISTRATEUR. La clé sert à récupérer
+   *     l'administration, pas à changer discrètement le mot de passe d'un
+   *     caissier — un administrateur sait déjà le faire, et lui laisse une
+   *     trace à son nom ;
+   *   — le compte doit être ACTIF. Rouvrir un compte désactivé par cette porte
+   *     contournerait la décision de celui qui l'a fermé ;
+   *   — la clé est REMPLACÉE à chaque usage. Une clé recopiée sur un carnet,
+   *     photographiée ou dictée au téléphone ne doit pas rester valable
+   *     indéfiniment ; la nouvelle est rendue à l'appelant, qui l'affiche.
+   *
+   * L'opération est inscrite au journal d'audit sans auteur connu : c'est
+   * exactement ce qu'elle est, et le dissimuler serait pire.
+   */
+  async resetWithRecoveryKey(
+    cle: string,
+    login: string,
+    nouveauMotDePasse: string,
+  ): Promise<{ nouvelleCle: string }> {
+    const empreinte = await new SettingRepository(this.db).raw(POSTE_KEYS.recoveryHash);
+    if (!empreinte) {
+      throw new BusinessError(
+        'Aucune clé de secours n’a été produite sur ce poste. Il a été installé par une version antérieure du logiciel : demandez à un administrateur encore connecté d’en produire une dans les paramètres.',
+      );
+    }
+
+    const propre = normaliserCleSecours(cle);
+    if (!cleSecoursPlausible(propre) || !(await verifyPassword(propre, empreinte))) {
+      // Le même message pour une clé mal formée et pour une clé fausse : dire
+      // laquelle des deux renseignerait qui essaie au hasard.
+      throw new BusinessError('Clé de secours refusée.');
+    }
+
+    const utilisateur = await new UserRepository(this.db).byLogin(login.trim().toLowerCase());
+    if (!utilisateur) throw new BusinessError('Aucun compte ne porte cet identifiant.');
+    if (utilisateur.status !== 'ACTIVE') {
+      throw new BusinessError('Ce compte est désactivé. La clé de secours ne le rouvre pas.');
+    }
+
+    const role = await new RoleRepository(this.db).byId(utilisateur.roleId);
+    if (!role?.permissions.includes(PERMISSIONS.userManage)) {
+      throw new BusinessError(
+        'La clé de secours ne débloque qu’un compte administrateur. Pour les autres, un administrateur suffit.',
+      );
+    }
+
+    const probleme = checkPasswordStrength(nouveauMotDePasse);
+    if (probleme) throw new BusinessError(probleme);
+
+    const nouvelleCle = genererCleSecours();
+    const users = new UserRepository(this.db);
+    await users.setPassword(utilisateur.id, await hashPassword(nouveauMotDePasse));
+    await new SettingRepository(this.db).set(
+      POSTE_KEYS.recoveryHash,
+      await hashPassword(normaliserCleSecours(nouvelleCle)),
+      null,
+    );
+    await new AuditRepository(this.db).write({
+      action: AUDIT_ACTIONS.update,
+      entity: 'app_user',
+      entityId: utilisateur.id,
+      userId: null,
+      userLabel: 'clé de secours',
+      shopId: utilisateur.shopId,
+      after: { motDePasse: 'réinitialisé par clé de secours' },
+    });
+
+    return { nouvelleCle };
+  }
+
+  /**
+   * Produit une nouvelle clé de secours, en remplacement de l'ancienne.
+   *
+   * Réservée à un administrateur connecté : c'est le geste qu'on fait quand la
+   * clé a été égarée, ou qu'elle a circulé.
+   */
+  async renewRecoveryKey(context: AppContext): Promise<string> {
+    assertCan(context, PERMISSIONS.userManage);
+    const cle = genererCleSecours();
+    await new SettingRepository(this.db).set(
+      POSTE_KEYS.recoveryHash,
+      await hashPassword(normaliserCleSecours(cle)),
+      null,
+    );
+    await new AuditRepository(this.db).write({
+      action: AUDIT_ACTIONS.update,
+      entity: 'setting',
+      entityId: POSTE_KEYS.recoveryHash,
+      userId: context.session?.id ?? null,
+      userLabel: context.session?.fullName ?? null,
+      shopId: context.shopId,
+      after: { cleSecours: 'renouvelée' },
+    });
+    return cle;
   }
 
   async logout(session: SessionUser): Promise<void> {
