@@ -139,6 +139,70 @@ describe('facture imprimée', () => {
   });
 });
 
+describe('les options traversent vraiment la base', () => {
+  /**
+   * LE TROU QUE CETTE ÉPREUVE BOUCHE. Les autres construisent le contexte à la
+   * main, avec des réglages passés directement : elles vérifient que le
+   * service les respecte, jamais qu'ils survivent à l'aller-retour par la
+   * base. Un réglage enregistré mais mal relu donnerait un aperçu et un PDF
+   * différents — et c'est arrivé.
+   */
+  it('un réglage enregistré est celui que la facture applique', async () => {
+    const fixture = await seedFixture();
+    const depart = await contextFor(fixture.db, fixture.adminId);
+
+    await new ShopRepository(fixture.db).update(fixture.shopA, {
+      nif: '3000123456',
+      stat: '47120',
+    });
+    const depot = new SettingRepository(fixture.db);
+    await new StockService(depart).receiveQuantity({ productId: fixture.cable, quantity: 5 });
+    const vente = await new SaleService(depart).checkout({
+      lines: [{ productId: fixture.cable, quantity: 1 }],
+      payments: [{ method: 'CASH', amount: 100_000 }],
+    });
+    const facture = await new InvoiceService(depart).issueForSale(vente.saleId);
+
+    /** Ce que fait la session : enregistrer, puis relire comme au démarrage. */
+    const apres = async (valeur: boolean) => {
+      await depot.set(SETTING_KEYS.invoiceShowIdentifiers, valeur, fixture.shopA);
+      const relus = await depot.load(fixture.shopA);
+      const contexte = await contextFor(fixture.db, fixture.adminId, { settings: relus });
+      return new InvoiceService(contexte).documentFacture(facture.id);
+    };
+
+    expect((await apres(true)).emetteur.nif).toBe('3000123456');
+    expect((await apres(false)).emetteur.nif).toBeNull();
+    expect((await apres(true)).emetteur.nif).toBe('3000123456');
+  });
+
+  it('le logo enregistré traverse la base sans se déformer', async () => {
+    const fixture = await seedFixture();
+    const depot = new SettingRepository(fixture.db);
+    const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+
+    await depot.set(SETTING_KEYS.invoiceLogo, image, fixture.shopA);
+    await depot.set(SETTING_KEYS.invoiceShowLogo, true, fixture.shopA);
+
+    const relus = await depot.load(fixture.shopA);
+    expect(relus.invoiceLogo).toBe(image);
+    expect(relus.invoiceShowLogo).toBe(true);
+  });
+
+  it('les libellés de signature traversent la base', async () => {
+    const fixture = await seedFixture();
+    const depot = new SettingRepository(fixture.db);
+    const libelles = { gauche: 'Le gérant', droite: "L'acheteur" };
+
+    await depot.set(SETTING_KEYS.invoiceShowSignatures, true, fixture.shopA);
+    await depot.set(SETTING_KEYS.invoiceSignatures, libelles, fixture.shopA);
+
+    const relus = await depot.load(fixture.shopA);
+    expect(relus.invoiceShowSignatures).toBe(true);
+    expect(relus.invoiceSignatures).toEqual(libelles);
+  });
+});
+
 describe('options d’impression', () => {
   let fixture: Fixture;
   let invoiceId: string;

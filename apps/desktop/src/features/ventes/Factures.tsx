@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { INVOICE_LABELS, INVOICE_STATUS, valuesOf } from '@boutique/shared';
 import { InvoiceRepository } from '@/core/db/repositories/invoice.repository';
-import { ShopRepository } from '@/core/db/repositories/shop.repository';
 import { InvoiceService } from '@/core/services/invoice.service';
 import { toCsv, csvMoney, exportFileName } from '@/core/services/export.service';
-import { Carte, Chargement, EnTetePage, Erreur } from '@/components/ui/Page';
+import { Avertissement, Carte, Chargement, EnTetePage, Erreur } from '@/components/ui/Page';
 import { BadgeFacture } from '@/components/ui/Badge';
 import { Bouton } from '@/components/ui/Bouton';
 import { Dialogue } from '@/components/ui/Dialogue';
@@ -149,21 +148,32 @@ function FicheFacture({
   onChange: () => void;
 }) {
   const contexte = useContexte();
-  const { shopName, settings } = useSession();
   const { notifier } = useNotifications();
   const monnaie = useMonnaie();
   const [montant, setMontant] = useState('');
   const [occupe, setOccupe] = useState(false);
   const [edition, setEdition] = useState(false);
 
+  /**
+   * L'APERÇU ET LE PDF VIENNENT DU MÊME DOCUMENT.
+   *
+   * C'étaient auparavant deux codes parallèles lisant les mêmes tables : un
+   * aperçu qui affichait le NIF sans regarder si la configuration demandait de
+   * l'imprimer, et un PDF qui le regardait. Ils ont fini par ne plus dire la
+   * même chose — l'écran montrait des mentions que la pièce ne portait pas,
+   * ce qui est la pire des deux erreurs : on ne découvre le manque qu'une fois
+   * la facture remise.
+   *
+   * Deux RENDUS d'un même document restent deux rendus ; ce qu'ils affichent,
+   * en revanche, ne peut plus diverger, puisqu'il n'est décidé qu'une fois.
+   */
   const etat = useChargement(
-    async () => new InvoiceService(contexte).document(invoiceId),
-    [contexte.db, invoiceId],
+    async () => new InvoiceService(contexte).documentFacture(invoiceId),
+    [contexte.db, invoiceId, contexte.settings],
   );
-  const boutique = useChargement(
-    async () => new ShopRepository(contexte.db).byId(contexte.shopId),
-    [contexte.db, contexte.shopId],
-  );
+
+  const doc = etat.donnees;
+  const reste = doc ? doc.total - doc.regle : 0;
 
   const encaisser = async () => {
     setOccupe(true);
@@ -191,7 +201,7 @@ function FicheFacture({
     try {
       const octets = await new InvoiceService(contexte).pdf(invoiceId);
       const chemin = await enregistrerBinaire(
-        `Facture-${facture?.number ?? invoiceId}.pdf`,
+        `Facture-${doc?.numero ?? invoiceId}.pdf`,
         octets,
         'Document PDF',
         'pdf',
@@ -204,15 +214,15 @@ function FicheFacture({
     }
   };
 
-  const facture = etat.donnees?.invoice;
-  const vente = etat.donnees?.sale;
-  const emetteur = boutique.donnees ?? null;
-  const reste = facture ? facture.total - facture.paid : 0;
+  const identifiants = (partie: { nif?: string | null; stat?: string | null } | null) =>
+    [partie?.nif ? `NIF ${partie.nif}` : null, partie?.stat ? `STAT ${partie.stat}` : null]
+      .filter(Boolean)
+      .join('   ');
 
   return (
     <Dialogue
       ouvert
-      titre={facture ? `Facture ${facture.number}` : 'Facture'}
+      titre={doc ? `Facture ${doc.numero}` : 'Facture'}
       onFermer={onFermer}
       largeur="lg"
       pied={
@@ -241,36 +251,24 @@ function FicheFacture({
         <Chargement />
       ) : etat.erreur ? (
         <Erreur message={etat.erreur} />
-      ) : facture ? (
+      ) : doc ? (
         <div className="space-y-4">
           <div
             id="zone-impression"
             data-selectable
             className="rounded-md border border-encre-200 p-5"
           >
-            <div className="mb-4 flex items-start justify-between">
+            <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <p className="text-lg font-bold uppercase">{shopName}</p>
-                {/*
-                  L'aperçu montre CE QUE PORTERA LE PDF, mentions fiscales
-                  comprises : un aperçu qui dirait autre chose que la pièce
-                  produite ne servirait qu'à tromper celui qui la relit.
-                */}
-                {emetteur?.nif || emetteur?.stat ? (
-                  <p className="text-xs text-encre-600">
-                    {[
-                      emetteur?.nif ? `NIF ${emetteur.nif}` : null,
-                      emetteur?.stat ? `STAT ${emetteur.stat}` : null,
-                    ]
-                      .filter(Boolean)
-                      .join('   ')}
-                  </p>
-                ) : (
-                  <p className="text-xs text-danger-700">
-                    NIF et STAT non renseignés — à compléter dans les paramètres.
-                  </p>
-                )}
-                {settings.invoiceMentions.map((mention) => (
+                {doc.logo ? <img src={doc.logo} alt="" className="mb-2 h-10 w-auto" /> : null}
+                <p className="text-lg font-bold uppercase">{doc.emetteur.nom}</p>
+                {doc.emetteur.adresse ? (
+                  <p className="text-xs text-encre-600">{doc.emetteur.adresse}</p>
+                ) : null}
+                {identifiants(doc.emetteur) ? (
+                  <p className="text-xs text-encre-600">{identifiants(doc.emetteur)}</p>
+                ) : null}
+                {doc.mentions.map((mention) => (
                   <p key={mention.libelle} className="text-xs text-encre-600">
                     {mention.libelle} : {mention.valeur}
                   </p>
@@ -278,67 +276,74 @@ function FicheFacture({
               </div>
               <div className="text-right">
                 <p className="text-sm font-semibold">FACTURE</p>
-                <p className="mono text-sm">{facture.number}</p>
-                <p className="text-xs text-encre-600">{formaterDate(facture.issuedAt)}</p>
+                <p className="mono text-sm">{doc.numero}</p>
+                <p className="text-xs text-encre-600">{formaterDate(doc.emiseLe)}</p>
+                {doc.echeanceLe ? (
+                  <p className="text-xs text-encre-600">
+                    Échéance : {formaterDate(doc.echeanceLe)}
+                  </p>
+                ) : null}
               </div>
             </div>
 
-            {vente ? (
-              <>
-                <p className="mb-2 text-sm">
-                  <span className="text-encre-500">Client : </span>
-                  {vente.customerLabel ?? 'Client de passage'}
-                </p>
-                <table className="tableau">
-                  <thead>
-                    <tr>
-                      <th>Désignation</th>
-                      <th>Identifiant</th>
-                      <th className="num">Qté</th>
-                      <th className="num">P.U.</th>
-                      <th className="num">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {vente.lines.map((ligne) => (
-                      <tr key={ligne.id}>
-                        <td>{ligne.label}</td>
-                        <td className="mono">{ligne.identifier ?? '—'}</td>
-                        <td className="num">{ligne.quantity}</td>
-                        <td className="num">{monnaie(ligne.unitPrice)}</td>
-                        <td className="num">{monnaie(ligne.lineTotal)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </>
-            ) : null}
+            <div className="mb-3 rounded bg-encre-50 p-2 text-sm">
+              <span className="text-encre-500">Facturé à : </span>
+              {doc.destinataire?.nom ?? 'Client de passage'}
+              {identifiants(doc.destinataire) ? (
+                <span className="ml-2 text-xs text-encre-600">
+                  {identifiants(doc.destinataire)}
+                </span>
+              ) : null}
+            </div>
+
+            <table className="tableau">
+              <thead>
+                <tr>
+                  <th>Désignation</th>
+                  <th>Identifiant</th>
+                  <th className="num">Qté</th>
+                  <th className="num">P.U.</th>
+                  <th className="num">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {doc.lignes.map((ligne, rang) => (
+                  <tr key={`${ligne.designation}-${rang}`}>
+                    <td>{ligne.designation}</td>
+                    <td className="mono">{ligne.identifiant ?? '—'}</td>
+                    <td className="num">{ligne.quantite}</td>
+                    <td className="num">{monnaie(ligne.prixUnitaire)}</td>
+                    <td className="num">{monnaie(ligne.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
 
             <div className="mt-4 flex justify-end">
               <div className="w-64 space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-encre-600">Sous-total</span>
-                  <span data-nombre>{monnaie(facture.subtotal)}</span>
+                  <span data-nombre>{monnaie(doc.sousTotal)}</span>
                 </div>
-                {facture.discount > 0 ? (
+                {doc.remise > 0 ? (
                   <div className="flex justify-between">
                     <span className="text-encre-600">Remises</span>
-                    <span data-nombre>− {monnaie(facture.discount)}</span>
+                    <span data-nombre>− {monnaie(doc.remise)}</span>
                   </div>
                 ) : null}
-                {facture.tax > 0 ? (
+                {doc.taxe > 0 ? (
                   <div className="flex justify-between">
                     <span className="text-encre-600">TVA</span>
-                    <span data-nombre>{monnaie(facture.tax)}</span>
+                    <span data-nombre>{monnaie(doc.taxe)}</span>
                   </div>
                 ) : null}
                 <div className="flex justify-between border-t border-encre-300 pt-1 font-semibold">
                   <span>Total</span>
-                  <span data-nombre>{monnaie(facture.total)}</span>
+                  <span data-nombre>{monnaie(doc.total)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-encre-600">Réglé</span>
-                  <span data-nombre>{monnaie(facture.paid)}</span>
+                  <span data-nombre>{monnaie(doc.regle)}</span>
                 </div>
                 {reste > 0 ? (
                   <div className="flex justify-between font-semibold text-danger-700">
@@ -349,8 +354,34 @@ function FicheFacture({
               </div>
             </div>
 
-            <p className="mt-4 text-xs text-encre-600">{settings.receiptFooter}</p>
+            {doc.conditions ? (
+              <p className="mt-4 text-xs text-encre-600">
+                <span className="font-semibold">Conditions de vente. </span>
+                {doc.conditions}
+              </p>
+            ) : null}
+            {doc.piedDePage ? (
+              <p className="mt-2 text-xs text-encre-600">{doc.piedDePage}</p>
+            ) : null}
+            {doc.signatures ? (
+              <div className="mt-4 grid grid-cols-2 gap-4">
+                {[doc.signatures.gauche, doc.signatures.droite].map((libelle) => (
+                  <div key={libelle} className="rounded border border-encre-200 p-2">
+                    <p className="text-xs font-semibold">{libelle}</p>
+                    <p className="text-xs text-encre-500">Date et signature</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
+
+          {!doc.emetteur.nif && !doc.emetteur.stat ? (
+            <Avertissement>
+              Cette facture ne porte aucun identifiant fiscal. Renseignez le NIF et le STAT de la
+              boutique dans les paramètres, et vérifiez que « Imprimer les identifiants fiscaux »
+              est coché — sans eux, la comptabilité d’une entreprise cliente refusera la pièce.
+            </Avertissement>
+          ) : null}
 
           {reste > 0 ? (
             <div className="sans-impression flex items-end gap-2">

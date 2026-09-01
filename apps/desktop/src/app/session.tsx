@@ -27,6 +27,7 @@ import {
   type ShopSettings,
 } from '@/core/db/repositories/setting.repository';
 import { AuthService } from '@/core/services/auth.service';
+import { SessionGardee } from '@/core/services/session-gardee';
 import { SetupService } from '@/core/services/setup.service';
 import { BackupService } from '@/core/services/backup.service';
 import { LicenceService } from '@/core/licence/licence.service';
@@ -170,11 +171,26 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
           return;
         }
         setShop({ id: boutique.id, code: boutique.code, name: boutique.name });
-        setSettings(await new SettingRepository(executeur).load(boutique.id));
+        const reglages = await new SettingRepository(executeur).load(boutique.id);
+        setSettings(reglages);
 
         // La licence est jugée AVANT la connexion : un poste échu doit le dire
         // à qui l'ouvre, pas après que quelqu'un a saisi son mot de passe.
         await chargerLicence(executeur, boutique.createdAt);
+        if (annule) return;
+
+        // Session gardée : on ferme et rouvre le logiciel plusieurs fois par
+        // jour, et ressaisir un mot de passe devant un client qui attend finit
+        // par se régler d'une mauvaise façon. Elle n'est reprise que si elle
+        // vaut encore — voir `SessionGardee`, qui refuse dans tous les cas
+        // douteux.
+        const reprise = await new SessionGardee(executeur).reprendre();
+        if (annule) return;
+        if (reprise) {
+          setSession(reprise);
+          setEtat({ phase: 'pret' });
+          return;
+        }
 
         setEtat({ phase: 'connexion' });
       } catch (cause) {
@@ -250,6 +266,9 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
       setShop({ id: connectee.shopId, code: connectee.shopCode, name: connectee.shopName });
       const chargees = await new SettingRepository(db).load(connectee.shopId);
       setSettings(chargees);
+      // Retenue APRÈS le chargement des réglages : c'est la boutique qui fixe
+      // la durée, et zéro jour veut dire « redemander à chaque ouverture ».
+      await new SessionGardee(db).retenir(connectee, chargees.sessionDays);
       setEtat({ phase: 'pret' });
 
       // La sauvegarde quotidienne est déclenchée APRÈS la connexion, une fois
@@ -274,6 +293,10 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
   );
 
   const deconnecter = useCallback(async () => {
+    // La session gardée est effacée D'ABORD : si la journalisation de la
+    // déconnexion échouait, on ne voudrait pas que la session survive à un
+    // départ explicite.
+    if (db) await new SessionGardee(db).oublier();
     if (db && session) await new AuthService(db).logout(session);
     setSession(null);
     setEtat({ phase: 'connexion' });

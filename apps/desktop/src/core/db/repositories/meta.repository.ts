@@ -16,6 +16,15 @@ export const META_KEYS = {
   syncCursor: 'sync.cursor',
   syncServerUrl: 'sync.server_url',
   syncToken: 'sync.token',
+  /**
+   * Session gardée d'un lancement à l'autre.
+   *
+   * Ici et non dans `setting` : c'est de la mécanique, cela n'a rien à faire
+   * dans un écran de réglages, et surtout `app_meta` NE VOYAGE PAS avec
+   * l'archive de portabilité. Une session emportée sur une autre machine y
+   * ouvrirait une caisse sans mot de passe.
+   */
+  session: 'session.active',
   seedApplied: 'seed.applied',
   schemaReady: 'schema.ready',
 } as const;

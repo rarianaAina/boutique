@@ -34,6 +34,7 @@ export const SETTING_KEYS = {
   costMethod: 'stock.cost_method',
   backupKeep: 'backup.keep',
   backupDaily: 'backup.daily',
+  sessionDays: 'session.duree_jours',
   syncServerUrl: 'sync.server_url',
   syncShopToken: 'sync.shop_token',
 } as const;
@@ -144,6 +145,16 @@ export interface ShopSettings {
   costMethod: CostMethod;
   backupKeep: number;
   backupDaily: boolean;
+  /**
+   * Jours pendant lesquels la session reste ouverte après fermeture.
+   *
+   * Zéro redemande le mot de passe à chaque ouverture. Au-delà, la première
+   * personne qui ouvre l'application agit sous l'identité de la dernière : sur
+   * un poste partagé, c'est le journal d'audit qui devient faux. Sept jours
+   * par défaut — la friction quotidienne est réelle, et la ressaisie devant un
+   * client qui attend finit par se régler d'une mauvaise façon.
+   */
+  sessionDays: number;
   syncServerUrl: string;
   syncShopToken: string;
 }
@@ -171,6 +182,7 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   costMethod: 'CATALOGUE',
   backupKeep: 14,
   backupDaily: true,
+  sessionDays: 7,
   syncServerUrl: '',
   syncShopToken: '',
 };
@@ -239,6 +251,7 @@ export class SettingRepository {
       costMethod: read(SETTING_KEYS.costMethod, DEFAULT_SETTINGS.costMethod),
       backupKeep: read(SETTING_KEYS.backupKeep, DEFAULT_SETTINGS.backupKeep),
       backupDaily: read(SETTING_KEYS.backupDaily, DEFAULT_SETTINGS.backupDaily),
+      sessionDays: read(SETTING_KEYS.sessionDays, DEFAULT_SETTINGS.sessionDays),
       syncServerUrl: read(SETTING_KEYS.syncServerUrl, DEFAULT_SETTINGS.syncServerUrl),
       syncShopToken: read(SETTING_KEYS.syncShopToken, DEFAULT_SETTINGS.syncShopToken),
     };

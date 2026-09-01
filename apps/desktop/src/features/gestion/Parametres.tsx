@@ -164,6 +164,11 @@ export function Parametres() {
       await depot.set(SETTING_KEYS.costMethod, valorisation, shopId);
       await depot.set(SETTING_KEYS.backupDaily, sauvegardeAuto, shopId);
       await depot.set(
+        SETTING_KEYS.sessionDays,
+        Number(champ('session', String(settings.sessionDays))),
+        shopId,
+      );
+      await depot.set(
         SETTING_KEYS.backupKeep,
         Number(champ('conserver', String(settings.backupKeep))) || 14,
         shopId,
@@ -302,6 +307,39 @@ export function Parametres() {
               </div>
             </div>
           )}
+        </Carte>
+
+        <Carte titre="Session">
+          <div className="space-y-3">
+            <Liste
+              label="Garder la session ouverte"
+              value={champ('session', String(settings.sessionDays))}
+              onChange={(e) => changer('session', e.target.value)}
+              options={[
+                { valeur: '0', libelle: 'Redemander à chaque ouverture' },
+                { valeur: '1', libelle: 'Une journée' },
+                { valeur: '7', libelle: 'Une semaine' },
+                { valeur: '30', libelle: 'Un mois' },
+                { valeur: '365', libelle: 'Un an' },
+              ]}
+              aide="Évite de ressaisir le mot de passe quand on ferme et rouvre le logiciel."
+            />
+            {/*
+              L'avertissement n'est pas décoratif : c'est le seul endroit où le
+              commerçant peut mesurer ce qu'il échange contre le confort.
+            */}
+            {Number(champ('session', String(settings.sessionDays))) > 0 ? (
+              <Avertissement>
+                La personne qui ouvrira le logiciel agira sous le nom du dernier connecté, jusqu’à
+                ce qu’elle se déconnecte. Sur un poste partagé, ses ventes et ses remises porteront
+                un nom qui n’est pas le sien.
+              </Avertissement>
+            ) : null}
+            <Information>
+              La session se ferme d’elle-même à la déconnexion, au changement de mot de passe, et si
+              le compte est suspendu.
+            </Information>
+          </div>
         </Carte>
 
         <Carte titre="Commerce">
