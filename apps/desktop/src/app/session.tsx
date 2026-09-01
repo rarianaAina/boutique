@@ -87,6 +87,14 @@ interface ValeurSession {
   /** Code d'installation à dicter pour obtenir une clé. */
   codeInstallation: string;
   /**
+   * La licence a-t-elle été JUGÉE ?
+   *
+   * « Absente » avait deux sens qu'il ne fallait pas confondre : « ce poste
+   * n'a pas de clé » et « on ne le sait pas encore ». Bloquer sur le second
+   * fermait un poste tout juste installé, avant même d'avoir regardé.
+   */
+  licenceEvaluee: boolean;
+  /**
    * La licence ouvre-t-elle cette fonction ?
    *
    * Distinct de `peut` : un droit se règle chez le client, une fonction
@@ -97,7 +105,9 @@ interface ValeurSession {
   rechargerLicence: () => Promise<void>;
   connecter: (login: string, motDePasse: string) => Promise<void>;
   deconnecter: () => Promise<void>;
-  installer: (entree: Parameters<SetupService['run']>[0]) => Promise<void>;
+  /** Rend la clé de secours, à montrer UNE FOIS : elle n'existera plus après. */
+  installer: (entree: Parameters<SetupService['run']>[0]) => Promise<string>;
+  terminerInstallation: () => void;
   rechargerParametres: () => Promise<void>;
   /** Incident non bloquant relevé au démarrage (sauvegarde impossible, etc.). */
   incidents: string[];
@@ -114,6 +124,7 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
   const [deviceId, setDeviceId] = useState('');
   const [incidents, setIncidents] = useState<string[]>([]);
   const [licence, setLicence] = useState<LicenceStatus>(LICENCE_INCONNUE);
+  const [licenceEvaluee, setLicenceEvaluee] = useState(false);
   const [codeInstallation, setCodeInstallation] = useState('');
   /** Date d'installation du poste, origine de la période d'essai. */
   const [installeLe, setInstalleLe] = useState<string | null>(null);
@@ -145,6 +156,10 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
         setDeviceId(poste);
 
         if (await new SetupService(executeur).needsSetup()) {
+          // Le code d'installation existe AVANT la boutique : c'est celui du
+          // poste. Le charger ici évite de le voir manquer sur l'écran
+          // d'activation si l'installation tourne court.
+          await chargerLicence(executeur, null);
           setEtat({ phase: 'installation' });
           return;
         }
@@ -159,10 +174,7 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
 
         // La licence est jugée AVANT la connexion : un poste échu doit le dire
         // à qui l'ouvre, pas après que quelqu'un a saisi son mot de passe.
-        const licences = new LicenceService(executeur);
-        setCodeInstallation(installationCode(await licences.installation()));
-        setInstalleLe(boutique.createdAt);
-        setLicence(await licences.status(boutique.createdAt));
+        await chargerLicence(executeur, boutique.createdAt);
 
         setEtat({ phase: 'connexion' });
       } catch (cause) {
@@ -179,10 +191,33 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  /**
+   * Charge le code d'installation et l'état de la licence.
+   *
+   * APPELÉE PAR TOUS LES CHEMINS D'ENTRÉE, et c'est tout l'objet de cette
+   * fonction. Elle ne vivait que dans la branche « poste déjà installé » du
+   * démarrage : sur un poste NEUF, on passait par l'installation puis par la
+   * connexion sans jamais la traverser. L'état restait « absente » — donc
+   * bloquant — et le code d'installation restait vide, ce qui affichait des
+   * points de suspension à la place des douze signes qu'il faut dicter.
+   *
+   * Le symptôme était déroutant : le poste s'ouvrait normalement au deuxième
+   * lancement, puisque le démarrage prenait alors l'autre branche.
+   */
+  const chargerLicence = useCallback(async (executeur: SqlExecutor, installeeLe: string | null) => {
+    const licences = new LicenceService(executeur);
+    // Le code d'abord : il ne dépend ni d'une boutique ni d'une date, et
+    // c'est lui qu'on doit pouvoir dicter même quand tout le reste échoue.
+    setCodeInstallation(installationCode(await licences.installation()));
+    setInstalleLe(installeeLe);
+    setLicence(await licences.status(installeeLe));
+    setLicenceEvaluee(true);
+  }, []);
+
   const rechargerLicence = useCallback(async () => {
     if (!db) return;
-    setLicence(await new LicenceService(db).status(installeLe));
-  }, [db, installeLe]);
+    await chargerLicence(db, installeLe);
+  }, [db, installeLe, chargerLicence]);
 
   const activerLicence = useCallback(
     async (cle: string) => {
@@ -206,6 +241,12 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
       if (!db) throw new Error('Base indisponible.');
       const { session: connectee } = await new AuthService(db).login(login, motDePasse);
       setSession(connectee);
+      // Relue à chaque connexion : la période d'essai s'écoule, et une clé
+      // saisie sur un autre poste de la même boutique change la donne.
+      await chargerLicence(
+        db,
+        installeLe ?? (await new ShopRepository(db).local())?.createdAt ?? null,
+      );
       setShop({ id: connectee.shopId, code: connectee.shopCode, name: connectee.shopName });
       const chargees = await new SettingRepository(db).load(connectee.shopId);
       setSettings(chargees);
@@ -229,7 +270,7 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
         ]);
       }
     },
-    [db],
+    [db, chargerLicence, installeLe],
   );
 
   const deconnecter = useCallback(async () => {
@@ -241,16 +282,24 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
   const installer = useCallback(
     async (entree: Parameters<SetupService['run']>[0]) => {
       if (!db) throw new Error('Base indisponible.');
-      await new SetupService(db).run(entree);
+      const { cleSecours } = await new SetupService(db).run(entree);
       const boutique = await new ShopRepository(db).local();
       if (boutique) {
         setShop({ id: boutique.id, code: boutique.code, name: boutique.name });
         setSettings(await new SettingRepository(db).load(boutique.id));
+        // SANS CECI, le poste tout juste installé s'ouvrait sur « poste non
+        // activé » : la période d'essai n'avait pas encore été calculée.
+        await chargerLicence(db, boutique.createdAt);
       }
-      setEtat({ phase: 'connexion' });
+      // La bascule vers la connexion est faite par l'écran, APRÈS que la clé
+      // de secours a été montrée et reconnue : elle n'existe plus ensuite.
+      return cleSecours;
     },
-    [db],
+    [db, chargerLicence],
   );
+
+  /** Passe à la connexion, une fois l'installation acquittée. */
+  const terminerInstallation = useCallback(() => setEtat({ phase: 'connexion' }), []);
 
   const contexte = useMemo<AppContext | null>(
     () =>
@@ -273,6 +322,7 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
       contexte,
       licence,
       codeInstallation,
+      licenceEvaluee,
       ouvre: (fonction: FonctionBoutique) => licenceAllows(licence, fonction),
       activerLicence,
       rechargerLicence,
@@ -291,6 +341,7 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
       connecter,
       deconnecter,
       installer,
+      terminerInstallation,
       rechargerParametres,
       incidents,
     }),
@@ -305,10 +356,12 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
       connecter,
       deconnecter,
       installer,
+      terminerInstallation,
       rechargerParametres,
       incidents,
       licence,
       codeInstallation,
+      licenceEvaluee,
       activerLicence,
       rechargerLicence,
     ],

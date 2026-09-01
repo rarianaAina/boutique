@@ -72,13 +72,25 @@ export function Licence({ pleinEcran = false }: { pleinEcran?: boolean }) {
           Code d’installation — c’est lui qu’il faut communiquer pour obtenir une clé.
         </p>
         <div className="mt-1.5 flex items-center gap-2">
-          <code className="mono rounded-md border border-encre-300 bg-encre-50 px-3 py-2 text-base tracking-wider">
-            {codeInstallation || '…'}
-          </code>
-          <Bouton taille="petit" variante="discret" onClick={copier}>
-            <Icone nom={copie ? 'check' : 'export'} taille={15} />
-            {copie ? 'Copié' : 'Copier'}
-          </Bouton>
+          {/* Un code vide ne s'écrit PAS en points de suspension : quelqu'un
+              au téléphone les lirait comme un code en cours de chargement, et
+              attendrait. On dit ce qui se passe et quoi faire. */}
+          {codeInstallation === '' ? (
+            <span className="text-sm text-danger-700">
+              Code indisponible — redémarrez l’application. S’il manque encore, la base locale n’a
+              pas pu être ouverte.
+            </span>
+          ) : (
+            <>
+              <code className="mono rounded-md border border-encre-300 bg-encre-50 px-3 py-2 text-base tracking-wider">
+                {codeInstallation}
+              </code>
+              <Bouton taille="petit" variante="discret" onClick={copier}>
+                <Icone nom={copie ? 'check' : 'export'} taille={15} />
+                {copie ? 'Copié' : 'Copier'}
+              </Bouton>
+            </>
+          )}
         </div>
       </div>
 

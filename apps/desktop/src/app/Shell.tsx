@@ -28,8 +28,17 @@ import { EcranCourant } from '@/features/EcranCourant';
  * le faire.
  */
 export function Shell() {
-  const { session, shopName, shopCode, deconnecter, peut, ouvre, licence, incidents } =
-    useSession();
+  const {
+    session,
+    shopName,
+    shopCode,
+    deconnecter,
+    peut,
+    ouvre,
+    licence,
+    licenceEvaluee,
+    incidents,
+  } = useSession();
   const { ecran, aller } = useNavigation();
   const [incidentsMasques, setIncidentsMasques] = useState(false);
 
@@ -70,12 +79,17 @@ export function Shell() {
   /*
    * Poste bloqué : plus rien d'autre que l'écran d'activation.
    *
+   * `licenceEvaluee` n'est pas une précaution superflue : sans elle, on
+   * bloquait sur l'état de DÉPART — « absente » — c'est-à-dire avant d'avoir
+   * seulement regardé. Un poste tout juste installé s'ouvrait donc sur son
+   * propre écran de blocage, sans même le code à dicter.
+   *
    * On ne laisse pas entrer « en lecture seule » : une caisse qu'on peut
    * encore consulter est une caisse qu'on continue d'utiliser, et l'échéance
    * ne serait jamais réglée. Les données, elles, restent intactes — l'écran le
    * dit, parce que c'est la première inquiétude du commerçant.
    */
-  if (licenceBlocks(licence)) return <Licence pleinEcran />;
+  if (licenceEvaluee && licenceBlocks(licence)) return <Licence pleinEcran />;
 
   return (
     <div className="flex h-full overflow-hidden bg-encre-100">
