@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { DEFAULT_NUMBERING, PERMISSIONS, formatDocumentNumber } from '@boutique/shared';
-import type { Mention } from '@boutique/facture';
+import type { Mention } from '@boutique/documents';
 import { SettingRepository, SETTING_KEYS } from '@/core/db/repositories/setting.repository';
 import { ShopRepository } from '@/core/db/repositories/shop.repository';
 import { Licence } from './Licence';
@@ -23,7 +23,7 @@ import { Champ, Case, Liste, ZoneTexte } from '@/components/ui/Champ';
 import { Confirmation } from '@/components/ui/Dialogue';
 import { AuthService } from '@/core/services/auth.service';
 import { PortabiliteService, type Archive } from '@/core/services/portabilite.service';
-import { lireFichier, telecharger } from './telechargement';
+import { lireFichier, lireImage, telecharger } from './telechargement';
 import { Tableau } from '@/components/ui/Tableau';
 import { useNotifications } from '@/components/ui/Notifications';
 import { useContexte, useSession } from '@/app/session';
@@ -68,6 +68,11 @@ export function Parametres() {
    * à chaque nouveau besoin.
    */
   const [mentions, setMentions] = useState<Mention[]>(settings.invoiceMentions);
+  const [logo, setLogo] = useState(settings.invoiceLogo);
+  const [avecLogo, setAvecLogo] = useState(settings.invoiceShowLogo);
+  const [avecFiscal, setAvecFiscal] = useState(settings.invoiceShowIdentifiers);
+  const [avecSignatures, setAvecSignatures] = useState(settings.invoiceShowSignatures);
+  const [signatures, setSignatures] = useState(settings.invoiceSignatures);
 
   const boutique = useChargement(
     async () => (db ? new ShopRepository(db).byId(shopId) : null),
@@ -81,6 +86,15 @@ export function Parametres() {
     async () => new BackupService(contexte).lastBackupAt(),
     [contexte.db, sauvegardes.donnees],
   );
+
+  const choisirLogo = async () => {
+    try {
+      const image = await lireImage();
+      if (image) setLogo(image);
+    } catch (cause) {
+      notifier(messageDe(cause), 'erreur');
+    }
+  };
 
   const modifierMention = (rang: number, parties: Partial<Mention>) =>
     setMentions((precedent) =>
@@ -130,6 +144,16 @@ export function Parametres() {
         champ('piedFacture', settings.invoiceFooter),
         shopId,
       );
+      await depot.set(SETTING_KEYS.invoiceLogo, logo, shopId);
+      await depot.set(SETTING_KEYS.invoiceShowLogo, avecLogo, shopId);
+      await depot.set(SETTING_KEYS.invoiceShowIdentifiers, avecFiscal, shopId);
+      await depot.set(
+        SETTING_KEYS.invoiceConditions,
+        champ('conditions', settings.invoiceConditions),
+        shopId,
+      );
+      await depot.set(SETTING_KEYS.invoiceShowSignatures, avecSignatures, shopId);
+      await depot.set(SETTING_KEYS.invoiceSignatures, signatures, shopId);
       await depot.set(
         SETTING_KEYS.lowStockThreshold,
         Number(champ('seuil', String(settings.lowStockThreshold))) || 0,
@@ -356,6 +380,67 @@ export function Parametres() {
               onChange={(e) => changer('pied', e.target.value)}
               aide="Conditions de retour, remerciements…"
             />
+
+            <Case
+              label="Imprimer le logo sur la facture"
+              checked={avecLogo}
+              onChange={(e) => setAvecLogo(e.target.checked)}
+              aide={logo ? undefined : 'Aucun logo chargé pour le moment.'}
+            />
+            {avecLogo ? (
+              <div className="flex items-center gap-3">
+                {logo ? (
+                  <img
+                    src={logo}
+                    alt="Logo de la boutique"
+                    className="h-12 w-auto rounded border border-encre-200 bg-white p-1"
+                  />
+                ) : null}
+                <Bouton icone="import" onClick={() => void choisirLogo()}>
+                  {logo ? 'Remplacer' : 'Choisir une image'}
+                </Bouton>
+                {logo ? (
+                  <Bouton icone="poubelle" onClick={() => setLogo('')}>
+                    Retirer
+                  </Bouton>
+                ) : null}
+              </div>
+            ) : null}
+
+            <Case
+              label="Imprimer les identifiants fiscaux (NIF, STAT)"
+              checked={avecFiscal}
+              onChange={(e) => setAvecFiscal(e.target.checked)}
+              aide="De la boutique et du client. Sans eux, une entreprise cliente ne peut pas déduire l’achat."
+            />
+
+            <ZoneTexte
+              label="Conditions de vente"
+              rows={3}
+              value={champ('conditions', settings.invoiceConditions)}
+              onChange={(e) => changer('conditions', e.target.value)}
+              aide="Imprimées au-dessus des signatures : elles engagent l’acheteur."
+            />
+
+            <Case
+              label="Cases à signer en bas de facture"
+              checked={avecSignatures}
+              onChange={(e) => setAvecSignatures(e.target.checked)}
+            />
+            {avecSignatures ? (
+              <div className="grid grid-cols-2 gap-3">
+                <Champ
+                  label="Case de gauche"
+                  value={signatures.gauche}
+                  onChange={(e) => setSignatures({ ...signatures, gauche: e.target.value })}
+                />
+                <Champ
+                  label="Case de droite"
+                  value={signatures.droite}
+                  onChange={(e) => setSignatures({ ...signatures, droite: e.target.value })}
+                />
+              </div>
+            ) : null}
 
             <ZoneTexte
               label="Mentions légales de la facture"

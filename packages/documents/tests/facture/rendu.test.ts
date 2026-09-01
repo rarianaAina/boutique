@@ -1,8 +1,8 @@
 import { DEFAULT_CURRENCY, formatMoney } from '@boutique/shared';
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
-import { pdfFacture, winAnsi } from '../src/rendu.js';
-import type { DocumentFacture, LigneFacture } from '../src/modele.js';
+import { pdfFacture, winAnsi } from '../../src/index.js';
+import type { DocumentFacture, LigneFacture } from '../../src/index.js';
 
 function article(rang: number): LigneFacture {
   return {
@@ -26,6 +26,7 @@ function facture(lignes: LigneFacture[], extra: Partial<DocumentFacture> = {}): 
       stat: '47120 11 2019 0 12345',
     },
     mentions: [{ libelle: 'RCS', valeur: 'Antananarivo 2019 B 00123' }],
+    logo: null,
     destinataire: {
       nom: 'Société Rakoto & Fils',
       adresse: 'Ankorondrano, Antananarivo',
@@ -45,6 +46,8 @@ function facture(lignes: LigneFacture[], extra: Partial<DocumentFacture> = {}): 
     regle: 0,
     reglements: [],
     devise: DEFAULT_CURRENCY,
+    conditions: '',
+    signatures: null,
     piedDePage: 'TVA non applicable. Marchandise garantie six mois pièces et main-d’œuvre.',
     ...extra,
   };
@@ -113,5 +116,39 @@ describe('production du PDF', () => {
       }),
     );
     expect(octets.byteLength).toBeGreaterThan(1_000);
+  });
+});
+
+describe('logo', () => {
+  const PNG =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  it('s’imprime quand la boutique en fournit un', async () => {
+    const avec = await pdfFacture(facture([article(1)], { logo: PNG }));
+    const sans = await pdfFacture(facture([article(1)]));
+    // L'image embarquée alourdit le fichier : c'est la preuve qu'elle y est.
+    expect(avec.byteLength).toBeGreaterThan(sans.byteLength);
+  });
+
+  it('n’empêche pas la facture quand l’image est illisible', async () => {
+    // Un commerçant enverra le fichier qu'il a sous la main. S'il n'est pas
+    // lisible, la facture doit sortir sans logo — pas échouer.
+    const octets = await pdfFacture(
+      facture([article(1)], { logo: 'data:image/png;base64,cecinestpasuneimage' }),
+    );
+    expect(Buffer.from(octets.slice(0, 5)).toString()).toBe('%PDF-');
+  });
+});
+
+describe('conditions et signatures', () => {
+  it('s’impriment quand elles sont fournies', async () => {
+    const nu = await pdfFacture(facture([article(1)]));
+    const garni = await pdfFacture(
+      facture([article(1)], {
+        conditions: 'Marchandise vendue non reprise passé huit jours.',
+        signatures: { gauche: 'Le vendeur', droite: 'Le client' },
+      }),
+    );
+    expect(garni.byteLength).toBeGreaterThan(nu.byteLength);
   });
 });

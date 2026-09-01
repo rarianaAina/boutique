@@ -1,17 +1,29 @@
 import { formatAmount, formatMoney } from '@boutique/shared';
-import { PDFDocument, StandardFonts, degrees, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
+import { PDFDocument, StandardFonts, degrees } from 'pdf-lib';
 import {
   A4,
+  ALERTE,
+  ENCRE,
+  ENCRE_PALE,
+  FOND_TITRES,
+  TRAIT,
+  couper,
+  ecrire,
+  formaterDate,
+  trait,
+  winAnsi,
+  type Mesurer,
+  type Plume,
+} from '../papier.js';
+import {
   MISE_EN_PAGE,
   colonnes,
-  couper,
   disposer,
   phraseEnLettres,
   type Colonne,
-  type Mesurer,
   type PageDisposee,
 } from './mise-en-page.js';
-import type { DocumentFacture, Partie } from './modele.js';
+import type { DocumentFacture, Partie, Signatures } from './modele.js';
 
 /**
  * Le PDF lui-même.
@@ -32,74 +44,6 @@ import type { DocumentFacture, Partie } from './modele.js';
  * `winAnsi` plus bas.
  */
 
-const ENCRE = rgb(0.09, 0.11, 0.15);
-const ENCRE_PALE = rgb(0.42, 0.45, 0.5);
-const TRAIT = rgb(0.8, 0.82, 0.85);
-const FOND_TITRES = rgb(0.95, 0.96, 0.97);
-const ALERTE = rgb(0.7, 0.15, 0.15);
-
-/**
- * Ce que WinAnsi ne sait pas écrire, et ce qu'on met à la place.
- *
- * `formatMoney` sépare les milliers par une ESPACE FINE INSÉCABLE (U+202F),
- * qui ne casse jamais une ligne de ticket. WinAnsi ne la connaît pas, et
- * pdf-lib refuse d'écrire un caractère qu'il ne sait pas encoder : sans cette
- * table, toute facture portant un montant à quatre chiffres échouerait — donc
- * presque toutes.
- */
-const REMPLACEMENTS: Record<string, string> = {
-  '\u202f': '\u00a0', // espace fine insécable -> espace insécable
-  '\u2009': '\u00a0', // espace fine
-  '\u2011': '-', // trait d'union insécable
-  '\u2212': '-', // signe moins
-  '\u02bc': "'", // apostrophe modificative
-};
-
-/**
- * Les caractères que WinAnsi place AU-DESSUS de Latin-1.
- *
- * Ils ne se déduisent pas de leur point de code : WinAnsi les range entre 0x80
- * et 0x9F, là où Latin-1 n'a que des caractères de commande. Sans cette liste,
- * un tiret cadratin ou une apostrophe typographique deviendrait un point
- * d'interrogation au milieu d'une désignation.
- */
-const SUPPLEMENT_WINANSI =
-  '\u20ac\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u017d' +
-  '\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u017e\u0178';
-
-/**
- * Rend un texte écrivable par une police standard.
- *
- * Ce qui reste inconnu devient un point d'interrogation plutôt que de faire
- * échouer l'émission : une facture avec un caractère de travers reste une
- * facture, une facture qui ne s'imprime pas bloque une vente.
- */
-export function winAnsi(texte: string): string {
-  let propre = '';
-  for (const lettre of texte) {
-    const remplacement = REMPLACEMENTS[lettre];
-    if (remplacement !== undefined) {
-      propre += remplacement;
-      continue;
-    }
-    const point = lettre.codePointAt(0) ?? 0;
-    // Latin-1 et les quelques ajouts de WinAnsi (guillemets, œ, €...) tiennent
-    // sous 0x2122 ; au-delà, aucune chance.
-    propre += point <= 0xff || SUPPLEMENT_WINANSI.includes(lettre) ? lettre : '?';
-  }
-  return propre;
-}
-
-/** Date ISO -> jj/mm/aaaa, sans dépendre des réglages de la machine. */
-export function formaterDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '—';
-  const jour = String(date.getDate()).padStart(2, '0');
-  const mois = String(date.getMonth() + 1).padStart(2, '0');
-  return `${jour}/${mois}/${date.getFullYear()}`;
-}
-
 const LIBELLES_STATUT: Record<DocumentFacture['statut'], string> = {
   BROUILLON: 'Brouillon',
   EMISE: 'Émise',
@@ -108,38 +52,6 @@ const LIBELLES_STATUT: Record<DocumentFacture['statut'], string> = {
   ANNULEE: 'Annulée',
   REMBOURSEE: 'Remboursée',
 };
-
-interface Plume {
-  page: PDFPage;
-  normale: PDFFont;
-  grasse: PDFFont;
-}
-
-interface Style {
-  taille?: number;
-  gras?: boolean;
-  couleur?: ReturnType<typeof rgb>;
-  /** `x` désigne alors le bord DROIT du texte. */
-  droite?: boolean;
-}
-
-function ecrire(plume: Plume, texte: string, x: number, y: number, style: Style = {}): void {
-  const taille = style.taille ?? MISE_EN_PAGE.taille;
-  const police = style.gras ? plume.grasse : plume.normale;
-  const propre = winAnsi(texte);
-  const gauche = style.droite ? x - police.widthOfTextAtSize(propre, taille) : x;
-  plume.page.drawText(propre, {
-    x: gauche,
-    y,
-    size: taille,
-    font: police,
-    color: style.couleur ?? ENCRE,
-  });
-}
-
-function trait(page: PDFPage, x: number, y: number, largeur: number): void {
-  page.drawRectangle({ x, y, width: largeur, height: 0.6, color: TRAIT });
-}
 
 /** Coordonnées et lignes d'une partie — émetteur ou destinataire. */
 function lignesPartie(partie: Partie): string[] {
@@ -155,6 +67,39 @@ function lignesPartie(partie: Partie): string[] {
   ].filter((ligne): ligne is string => ligne !== null);
 }
 
+/** Une image prête à être posée, déjà réduite au cadre réservé. */
+interface LogoPose {
+  image: Awaited<ReturnType<PDFDocument['embedPng']>>;
+  largeur: number;
+  hauteur: number;
+}
+
+/**
+ * Charge le logo et le réduit au cadre, en gardant ses proportions.
+ *
+ * UN LOGO ABSENT VAUT MIEUX QU'UNE FACTURE QUI N'EXISTE PAS : si l'image est
+ * d'un format inattendu ou abîmée, on l'ignore et l'on imprime la facture sans
+ * elle. Le commerçant remarquera l'absence du logo ; il ne remarquerait pas
+ * une vente qu'il n'a pas pu facturer.
+ */
+async function chargerLogo(pdf: PDFDocument, uri: string | null): Promise<LogoPose | null> {
+  if (!uri) return null;
+  try {
+    const virgule = uri.indexOf(',');
+    const brut = virgule >= 0 ? uri.slice(virgule + 1) : uri;
+    const octets = Uint8Array.from(atob(brut), (lettre) => lettre.charCodeAt(0));
+    const image = /^data:image\/jpe?g/i.test(uri)
+      ? await pdf.embedJpg(octets)
+      : await pdf.embedPng(octets);
+
+    const cadre = MISE_EN_PAGE.logo;
+    const facteur = Math.min(cadre.largeur / image.width, cadre.hauteur / image.height, 1);
+    return { image, largeur: image.width * facteur, hauteur: image.height * facteur };
+  } catch {
+    return null;
+  }
+}
+
 /** Produit le PDF complet de la facture. */
 export async function pdfFacture(doc: DocumentFacture): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
@@ -165,6 +110,11 @@ export async function pdfFacture(doc: DocumentFacture): Promise<Uint8Array> {
     (gras ? grasse : normale).widthOfTextAtSize(winAnsi(texte), taille);
 
   const cols = colonnes(doc);
+  // La place du logo est réservée par la mise en page à partir du CADRE, pas
+  // de l'image : une image trop haute est réduite, une image illisible laisse
+  // le cadre vide. Dans les deux cas la hauteur réservée est la même, et le
+  // tableau commence au même endroit.
+  const logo = await chargerLogo(pdf, doc.logo);
   const pages = disposer(doc, mesurer);
 
   pdf.setTitle(`Facture ${doc.numero}`);
@@ -177,7 +127,9 @@ export async function pdfFacture(doc: DocumentFacture): Promise<Uint8Array> {
     const plume: Plume = { page, normale, grasse };
     let y = A4.hauteur - MISE_EN_PAGE.marge;
 
-    y = disposee.premiere ? enTeteComplet(plume, doc, y) : enTeteSuite(plume, doc, y, disposee);
+    y = disposee.premiere
+      ? enTeteComplet(plume, doc, y, logo)
+      : enTeteSuite(plume, doc, y, disposee);
 
     y = tableau(plume, doc, cols, disposee, y);
 
@@ -190,10 +142,29 @@ export async function pdfFacture(doc: DocumentFacture): Promise<Uint8Array> {
 }
 
 /** En-tête de la première page : émetteur, pavé du document, destinataire. */
-function enTeteComplet(plume: Plume, doc: DocumentFacture, depart: number): number {
+function enTeteComplet(
+  plume: Plume,
+  doc: DocumentFacture,
+  depart: number,
+  logo: LogoPose | null,
+): number {
   const { marge, interligne, taille, taillePetit } = MISE_EN_PAGE;
   const droite = A4.largeur - marge;
-  let y = depart - MISE_EN_PAGE.tailleTitre;
+  let haut = depart;
+
+  if (doc.logo) {
+    if (logo) {
+      plume.page.drawImage(logo.image, {
+        x: marge,
+        y: haut - logo.hauteur,
+        width: logo.largeur,
+        height: logo.hauteur,
+      });
+    }
+    haut -= MISE_EN_PAGE.logo.hauteur + 8;
+  }
+
+  let y = haut - MISE_EN_PAGE.tailleTitre;
 
   ecrire(plume, doc.emetteur.nom.toUpperCase(), marge, y, {
     taille: MISE_EN_PAGE.tailleSousTitre + 3,
@@ -421,6 +392,50 @@ function piedDeFacture(plume: Plume, doc: DocumentFacture, depart: number, mesur
       ecrire(plume, morceau, marge, y, { taille: taillePetit, couleur: ENCRE_PALE });
     }
   }
+
+  if (doc.conditions) {
+    y -= 10;
+    ecrire(plume, 'CONDITIONS DE VENTE', marge, y, {
+      taille: taillePetit,
+      gras: true,
+      couleur: ENCRE_PALE,
+    });
+    for (const morceau of couper(doc.conditions, A4.largeur - 2 * marge, taillePetit, mesurer)) {
+      y -= 10;
+      ecrire(plume, morceau, marge, y, { taille: taillePetit, couleur: ENCRE_PALE });
+    }
+  }
+
+  if (doc.signatures) casesASigner(plume, doc.signatures, y - 12);
+}
+
+/**
+ * Les deux cases à signer.
+ *
+ * UN CADRE et non un simple trait : sur une facture photographiée ou passée au
+ * télécopieur, un trait seul se confond avec le reste du document, et l'on
+ * discute ensuite de savoir si le client avait signé ou non.
+ */
+function casesASigner(plume: Plume, signatures: Signatures, depart: number): void {
+  const { marge, taillePetit, hauteurSignature } = MISE_EN_PAGE;
+  const largeur = (A4.largeur - 2 * marge - 24) / 2;
+
+  [signatures.gauche, signatures.droite].forEach((libelle, rang) => {
+    const x = marge + rang * (largeur + 24);
+    plume.page.drawRectangle({
+      x,
+      y: depart - hauteurSignature,
+      width: largeur,
+      height: hauteurSignature,
+      borderColor: TRAIT,
+      borderWidth: 0.6,
+    });
+    ecrire(plume, libelle, x + 8, depart - 13, { taille: taillePetit, gras: true });
+    ecrire(plume, 'Date et signature', x + 8, depart - 25, {
+      taille: taillePetit,
+      couleur: ENCRE_PALE,
+    });
+  });
 }
 
 function numeroterPage(plume: Plume, page: PageDisposee, total: number): void {

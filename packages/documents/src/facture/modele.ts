@@ -1,4 +1,5 @@
 import type { CurrencyFormat, Money } from '@boutique/shared';
+import type { Mention, Partie } from '../partie.js';
 
 /**
  * Ce qu'une facture doit porter, indépendamment de son rendu.
@@ -9,33 +10,6 @@ import type { CurrencyFormat, Money } from '@boutique/shared';
  * différents pour un même commerce. Celui qui appelle traduit ses propres
  * données vers ce modèle, et rien d'autre ne circule.
  */
-
-/** Émetteur ou destinataire. Les mêmes champs des deux côtés. */
-export interface Partie {
-  nom: string;
-  adresse?: string | null;
-  telephone?: string | null;
-  courriel?: string | null;
-  /**
-   * NIF et STAT. Sans eux, la comptabilité d'une entreprise cliente refuse la
-   * pièce, et l'émetteur est en défaut. Facultatifs parce qu'un particulier
-   * n'en a pas.
-   */
-  nif?: string | null;
-  stat?: string | null;
-}
-
-/**
- * Mention libre de l'émetteur : registre du commerce, capital, banque, Mvola.
- *
- * Une liste plutôt que des colonnes : ce que chaque société doit ou veut faire
- * figurer varie, et une colonne par mention imposerait une migration à chaque
- * nouveau besoin.
- */
-export interface Mention {
-  libelle: string;
-  valeur: string;
-}
 
 export interface LigneFacture {
   designation: string;
@@ -57,8 +31,32 @@ export interface Reglement {
 export type StatutFacture =
   'BROUILLON' | 'EMISE' | 'PAYEE' | 'PARTIELLEMENT_PAYEE' | 'ANNULEE' | 'REMBOURSEE';
 
+/**
+ * Les deux cases à signer, en bas de la pièce.
+ *
+ * Sur un marché où beaucoup de ventes se règlent en plusieurs fois et où
+ * l'appareil part le jour même, la signature du client au bas de la facture
+ * est souvent la seule trace qu'il a reconnu la marchandise et le solde. Les
+ * libellés se règlent : « Le vendeur » et « Le client » ne conviennent pas à
+ * une livraison en dépôt.
+ */
+export interface Signatures {
+  gauche: string;
+  droite: string;
+}
+
+export type { Mention, Partie };
+
 export interface DocumentFacture {
   emetteur: Partie;
+  /**
+   * Logo, en URI de données (`data:image/png;base64,…`).
+   *
+   * `null` quand la boutique n'en a pas ou ne veut pas l'imprimer : c'est la
+   * configuration qui tranche, le document ne porte pas de case à cocher. Un
+   * modèle qui saurait qu'une option existe finirait par en connaître dix.
+   */
+  logo: string | null;
   /** Mentions libres de l'émetteur, imprimées sous ses coordonnées. */
   mentions: Mention[];
   /** `null` pour un client de passage : la facture reste valable. */
@@ -80,7 +78,17 @@ export interface DocumentFacture {
   reglements: Reglement[];
 
   devise: CurrencyFormat;
-  /** Mentions légales de bas de page : régime de TVA, conditions, pénalités. */
+  /**
+   * Conditions de vente, imprimées avant les signatures.
+   *
+   * Distinctes du pied de page : le pied porte les mentions imposées — régime
+   * de TVA, pénalités — tandis que les conditions engagent l'acheteur, et
+   * c'est pour cela qu'elles se placent au-dessus de l'endroit où il signe.
+   */
+  conditions: string;
+  /** `null` pour une facture qui ne se signe pas. */
+  signatures: Signatures | null;
+  /** Mentions légales de bas de page : régime de TVA, pénalités. */
   piedDePage: string;
   notes?: string | null;
 }

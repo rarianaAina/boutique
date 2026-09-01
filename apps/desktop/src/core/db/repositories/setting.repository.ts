@@ -1,6 +1,6 @@
 import { DEFAULT_CURRENCY, DEFAULT_NUMBERING, nowIso } from '@boutique/shared';
 import type { CurrencyFormat, NumberingRule } from '@boutique/shared';
-import type { Mention } from '@boutique/facture';
+import type { Mention } from '@boutique/documents';
 import type { CostMethod } from '../../services/cost.service';
 import { parseJson, toJson } from '../rows';
 import type { SqlExecutor } from '../client';
@@ -22,6 +22,12 @@ export const SETTING_KEYS = {
   receiptFooter: 'print.receipt_footer',
   invoiceMentions: 'facture.mentions',
   invoiceFooter: 'facture.pied',
+  invoiceLogo: 'facture.logo',
+  invoiceShowLogo: 'facture.afficher_logo',
+  invoiceShowIdentifiers: 'facture.afficher_identifiants',
+  invoiceConditions: 'facture.conditions',
+  invoiceShowSignatures: 'facture.afficher_signatures',
+  invoiceSignatures: 'facture.signatures',
   lowStockThreshold: 'stock.low_threshold',
   allowNegativeStock: 'stock.allow_negative',
   strictImeiChecksum: 'stock.strict_imei',
@@ -91,6 +97,22 @@ export interface ShopSettings {
    * visite », une facture dit le régime de TVA et les pénalités de retard.
    */
   invoiceFooter: string;
+  /**
+   * Logo, en URI de données. Chaîne vide quand la boutique n'en a pas.
+   *
+   * Stocké dans la base et non sur le disque : il part alors avec l'archive de
+   * portabilité, et la boutique retrouve sa facture à l'identique sur une autre
+   * machine ou en ligne. Un chemin de fichier ne survivrait ni à l'un ni à
+   * l'autre.
+   */
+  invoiceLogo: string;
+  invoiceShowLogo: boolean;
+  /** Imprimer les NIF et STAT des deux parties. */
+  invoiceShowIdentifiers: boolean;
+  /** Conditions de vente, imprimées au-dessus des signatures. */
+  invoiceConditions: string;
+  invoiceShowSignatures: boolean;
+  invoiceSignatures: { gauche: string; droite: string };
   /** Seuil d'alerte quand un produit n'en définit pas lui-même. */
   lowStockThreshold: number;
   /**
@@ -135,6 +157,14 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   receiptFooter: 'Merci de votre visite.',
   invoiceMentions: [],
   invoiceFooter: '',
+  invoiceLogo: '',
+  invoiceShowLogo: false,
+  // Vrai par défaut : une boutique qui a renseigné son NIF veut qu'il
+  // s'imprime. Si elle ne l'a pas renseigné, rien ne s'imprime de toute façon.
+  invoiceShowIdentifiers: true,
+  invoiceConditions: '',
+  invoiceShowSignatures: false,
+  invoiceSignatures: { gauche: 'Le vendeur', droite: 'Le client' },
   lowStockThreshold: 3,
   allowNegativeStock: false,
   strictImeiChecksum: true,
@@ -185,6 +215,18 @@ export class SettingRepository {
       receiptFooter: read(SETTING_KEYS.receiptFooter, DEFAULT_SETTINGS.receiptFooter),
       invoiceMentions: read(SETTING_KEYS.invoiceMentions, DEFAULT_SETTINGS.invoiceMentions),
       invoiceFooter: read(SETTING_KEYS.invoiceFooter, DEFAULT_SETTINGS.invoiceFooter),
+      invoiceLogo: read(SETTING_KEYS.invoiceLogo, DEFAULT_SETTINGS.invoiceLogo),
+      invoiceShowLogo: read(SETTING_KEYS.invoiceShowLogo, DEFAULT_SETTINGS.invoiceShowLogo),
+      invoiceShowIdentifiers: read(
+        SETTING_KEYS.invoiceShowIdentifiers,
+        DEFAULT_SETTINGS.invoiceShowIdentifiers,
+      ),
+      invoiceConditions: read(SETTING_KEYS.invoiceConditions, DEFAULT_SETTINGS.invoiceConditions),
+      invoiceShowSignatures: read(
+        SETTING_KEYS.invoiceShowSignatures,
+        DEFAULT_SETTINGS.invoiceShowSignatures,
+      ),
+      invoiceSignatures: read(SETTING_KEYS.invoiceSignatures, DEFAULT_SETTINGS.invoiceSignatures),
       lowStockThreshold: read(SETTING_KEYS.lowStockThreshold, DEFAULT_SETTINGS.lowStockThreshold),
       allowNegativeStock: read(
         SETTING_KEYS.allowNegativeStock,

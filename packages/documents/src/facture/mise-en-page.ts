@@ -1,4 +1,5 @@
-import { montantEnLettres } from './en-lettres.js';
+import { montantEnLettres } from '../en-lettres.js';
+import { A4, PAPIER, couper, type Mesurer } from '../papier.js';
 import type { DocumentFacture, LigneFacture } from './modele.js';
 
 /**
@@ -15,18 +16,9 @@ import type { DocumentFacture, LigneFacture } from './modele.js';
  * épreuves passent une règle simple, et les deux exercent le même code.
  */
 
-/** A4 en points typographiques (72 par pouce). */
-export const A4 = { largeur: 595.28, hauteur: 841.89 } as const;
-
+/** Ce que la facture ajoute au papier commun. */
 export const MISE_EN_PAGE = {
-  marge: 42,
-  /** Corps du texte courant. */
-  taille: 9,
-  tailleTitre: 20,
-  tailleSousTitre: 11,
-  taillePetit: 7.5,
-  /** Hauteur d'une ligne de texte courant. */
-  interligne: 11.5,
+  ...PAPIER,
   /**
    * Du haut d'une rangée à la BASE de sa première ligne de texte.
    *
@@ -48,10 +40,18 @@ export const MISE_EN_PAGE = {
    * la pagination d'avancer, et le document ne se terminerait jamais.
    */
   lignesDesignation: 3,
+  /**
+   * Cadre réservé au logo, en points.
+   *
+   * Une BORNE, pas une taille : l'image est réduite pour y tenir en gardant
+   * ses proportions. Sans borne, un logo de deux mille pixels de haut
+   * repousserait le tableau hors de la page — et le commerçant enverrait le
+   * fichier qu'il a sous la main, pas celui qu'on aurait souhaité.
+   */
+  logo: { largeur: 130, hauteur: 44 },
+  /** Hauteur d'une case de signature, cadre compris. */
+  hauteurSignature: 56,
 } as const;
-
-/** Mesure la largeur d'un texte. Fournie par le rendu. */
-export type Mesurer = (texte: string, taille: number, gras?: boolean) => number;
 
 export interface Colonne {
   cle: 'designation' | 'identifiant' | 'quantite' | 'prixUnitaire' | 'remise' | 'total';
@@ -89,58 +89,6 @@ export function colonnes(doc: DocumentFacture): Colonne[] {
     ...identifiant,
     ...fixes,
   ];
-}
-
-/**
- * Découpe un texte pour qu'il tienne dans une largeur.
- *
- * La coupure se fait aux espaces. Un mot plus long que la colonne — une
- * référence sans espace, cela arrive — est coupé au caractère : mieux vaut une
- * césure disgracieuse qu'un texte qui déborde sur la colonne voisine.
- */
-export function couper(
-  texte: string,
-  largeurMax: number,
-  taille: number,
-  mesurer: Mesurer,
-): string[] {
-  const propre = texte.replace(/\s+/g, ' ').trim();
-  if (propre === '') return [''];
-
-  const lignes: string[] = [];
-  let courante = '';
-
-  const poser = () => {
-    if (courante !== '') lignes.push(courante);
-    courante = '';
-  };
-
-  for (const mot of propre.split(' ')) {
-    const essai = courante === '' ? mot : `${courante} ${mot}`;
-    if (mesurer(essai, taille) <= largeurMax) {
-      courante = essai;
-      continue;
-    }
-    poser();
-
-    if (mesurer(mot, taille) <= largeurMax) {
-      courante = mot;
-      continue;
-    }
-    // Mot plus large que la colonne : césure au caractère.
-    let morceau = '';
-    for (const lettre of mot) {
-      if (mesurer(morceau + lettre, taille) > largeurMax && morceau !== '') {
-        lignes.push(morceau);
-        morceau = lettre;
-      } else {
-        morceau += lettre;
-      }
-    }
-    courante = morceau;
-  }
-  poser();
-  return lignes.length > 0 ? lignes : [''];
 }
 
 /** Hauteur d'une rangée portant `lignes` lignes de désignation. */
@@ -207,6 +155,7 @@ export function hauteurs(doc: DocumentFacture, mesurer: Mesurer): Hauteurs {
   const lignesPave = 3 + (doc.echeanceLe ? 1 : 0);
 
   const enTetePremiere =
+    (doc.logo ? MISE_EN_PAGE.logo.hauteur + 8 : 0) +
     MISE_EN_PAGE.tailleTitre +
     8 +
     Math.max(lignesEmetteur, lignesPave) * interligne +
@@ -236,10 +185,24 @@ export function hauteurs(doc: DocumentFacture, mesurer: Mesurer): Hauteurs {
       ? couper(doc.piedDePage, largeurLettres, MISE_EN_PAGE.taillePetit, mesurer).length
       : 0);
 
+  // Les conditions de vente engagent l'acheteur : elles se placent AVANT
+  // l'endroit où il signe, et leur hauteur doit donc être réservée ici.
+  const lignesConditions = doc.conditions
+    ? couper(doc.conditions, largeurLettres, MISE_EN_PAGE.taillePetit, mesurer).length + 1
+    : 0;
+
   return {
     enTetePremiere,
     enTeteSuite: MISE_EN_PAGE.tailleSousTitre + 14,
-    pied: 14 + lignesTotaux * interligne + 10 + lignesEnLettres * interligne + 8 + lignesPied * 10,
+    pied:
+      14 +
+      lignesTotaux * interligne +
+      10 +
+      lignesEnLettres * interligne +
+      8 +
+      lignesPied * 10 +
+      lignesConditions * 10 +
+      (doc.signatures ? MISE_EN_PAGE.hauteurSignature + 12 : 0),
     numerotation: 16,
   };
 }

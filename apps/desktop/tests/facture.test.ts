@@ -12,7 +12,7 @@ import type { AppContext } from '@/core/services/context';
 /**
  * De la base au document imprimé.
  *
- * Le PDF lui-même est éprouvé dans `@boutique/facture`, sur un modèle construit
+ * Le PDF lui-même est éprouvé dans `@boutique/documents`, sur un modèle construit
  * à la main. Ce qui se joue ici est la COUTURE : qu'un NIF saisi dans les
  * paramètres arrive jusqu'à la facture, qu'un client professionnel y figure
  * avec le sien, que les règlements portent le nom du moyen et non son code.
@@ -115,7 +115,7 @@ describe('facture imprimée', () => {
   });
 
   it('produit un fichier PDF', async () => {
-    // Le contenu du PDF est éprouvé dans `@boutique/facture`, qui le relit
+    // Le contenu du PDF est éprouvé dans `@boutique/documents`, qui le relit
     // page par page. Ici on vérifie seulement que la chaîne va jusqu'au bout
     // et rend un fichier qu'un lecteur acceptera d'ouvrir.
     const octets = await new InvoiceService(context).pdf(invoiceId);
@@ -136,5 +136,86 @@ describe('facture imprimée', () => {
     const document = await new InvoiceService(context).documentFacture(facture.id);
     expect(document.destinataire).toBeNull();
     await expect(new InvoiceService(context).pdf(facture.id)).resolves.toBeInstanceOf(Uint8Array);
+  });
+});
+
+describe('options d’impression', () => {
+  let fixture: Fixture;
+  let invoiceId: string;
+
+  beforeEach(async () => {
+    fixture = await seedFixture();
+    const base = await contextFor(fixture.db, fixture.adminId);
+
+    await new ShopRepository(fixture.db).update(fixture.shopA, { nif: '3000123456' });
+    const clientId = await new CustomerRepository(fixture.db).create({
+      lastName: 'Rakoto',
+      nif: '3000987654',
+      shopId: fixture.shopA,
+    });
+
+    await new StockService(base).receiveQuantity({ productId: fixture.cable, quantity: 5 });
+    const vente = await new SaleService(base).checkout({
+      customerId: clientId,
+      lines: [{ productId: fixture.cable, quantity: 1 }],
+      payments: [{ method: 'CASH', amount: 100_000 }],
+    });
+    invoiceId = (await new InvoiceService(base).issueForSale(vente.saleId)).id;
+  });
+
+  const documentAvec = async (settings: Parameters<typeof contextFor>[2]) =>
+    new InvoiceService(await contextFor(fixture.db, fixture.adminId, settings)).documentFacture(
+      invoiceId,
+    );
+
+  it('retire les identifiants fiscaux des DEUX parties quand la case est décochée', async () => {
+    const avec = await documentAvec({ settings: { invoiceShowIdentifiers: true } });
+    expect(avec.emetteur.nif).toBe('3000123456');
+    expect(avec.destinataire?.nif).toBe('3000987654');
+
+    const sans = await documentAvec({ settings: { invoiceShowIdentifiers: false } });
+    expect(sans.emetteur.nif).toBeNull();
+    expect(sans.destinataire?.nif).toBeNull();
+  });
+
+  it('n’imprime le logo que si la case est cochée', async () => {
+    const image = 'data:image/png;base64,AAAA';
+
+    expect(
+      (await documentAvec({ settings: { invoiceLogo: image, invoiceShowLogo: true } })).logo,
+    ).toBe(image);
+    expect(
+      (await documentAvec({ settings: { invoiceLogo: image, invoiceShowLogo: false } })).logo,
+    ).toBeNull();
+    // Case cochée mais aucune image chargée : rien à imprimer.
+    expect(
+      (await documentAvec({ settings: { invoiceLogo: '', invoiceShowLogo: true } })).logo,
+    ).toBeNull();
+  });
+
+  it('n’imprime les cases à signer que si elles sont demandées', async () => {
+    const signatures = { gauche: 'Le gérant', droite: "L'acheteur" };
+
+    expect(
+      (
+        await documentAvec({
+          settings: { invoiceShowSignatures: true, invoiceSignatures: signatures },
+        })
+      ).signatures,
+    ).toEqual(signatures);
+    expect(
+      (
+        await documentAvec({
+          settings: { invoiceShowSignatures: false, invoiceSignatures: signatures },
+        })
+      ).signatures,
+    ).toBeNull();
+  });
+
+  it('reprend les conditions de vente', async () => {
+    const document = await documentAvec({
+      settings: { invoiceConditions: 'Marchandise vendue non reprise après huit jours.' },
+    });
+    expect(document.conditions).toBe('Marchandise vendue non reprise après huit jours.');
   });
 });

@@ -1,6 +1,6 @@
 import { INVOICE_STATUS, PERMISSIONS, nowIso } from '@boutique/shared';
 import type { Invoice, InvoiceStatus, Money } from '@boutique/shared';
-import type { DocumentFacture, StatutFacture } from '@boutique/facture';
+import type { DocumentFacture, StatutFacture } from '@boutique/documents';
 import { CustomerRepository, customerName } from '../db/repositories/customer.repository';
 import { ShopRepository } from '../db/repositories/shop.repository';
 import { InvoiceRepository } from '../db/repositories/invoice.repository';
@@ -179,24 +179,31 @@ export class InvoiceService {
       ).map((moyen) => [moyen.code, moyen.label]),
     );
 
+    // Ce que la CONFIGURATION laisse passer. Le modèle du document ne porte
+    // pas de case à cocher : il reçoit ce qu'il doit imprimer, et rien
+    // d'autre. Un modèle qui saurait qu'une option existe en connaîtrait dix.
+    const reglages = this.context.settings;
+    const fiscal = reglages.invoiceShowIdentifiers;
+
     return {
       emetteur: {
         nom: boutique?.name ?? this.context.shopCode,
         adresse: boutique?.address ?? null,
         telephone: boutique?.phone ?? null,
         courriel: boutique?.email ?? null,
-        nif: boutique?.nif ?? null,
-        stat: boutique?.stat ?? null,
+        nif: fiscal ? (boutique?.nif ?? null) : null,
+        stat: fiscal ? (boutique?.stat ?? null) : null,
       },
-      mentions: this.context.settings.invoiceMentions,
+      logo: reglages.invoiceShowLogo && reglages.invoiceLogo ? reglages.invoiceLogo : null,
+      mentions: reglages.invoiceMentions,
       destinataire: client
         ? {
             nom: customerName(client),
             adresse: client.address,
             telephone: client.phone,
             courriel: client.email,
-            nif: client.nif,
-            stat: client.stat,
+            nif: fiscal ? client.nif : null,
+            stat: fiscal ? client.stat : null,
           }
         : null,
 
@@ -224,8 +231,10 @@ export class InvoiceService {
         montant: reglement.amount,
       })),
 
-      devise: this.context.settings.currency,
-      piedDePage: this.context.settings.invoiceFooter,
+      devise: reglages.currency,
+      conditions: reglages.invoiceConditions,
+      signatures: reglages.invoiceShowSignatures ? reglages.invoiceSignatures : null,
+      piedDePage: reglages.invoiceFooter,
       notes: invoice.notes,
     };
   }
@@ -239,7 +248,7 @@ export class InvoiceService {
    * est destiné, cela se voit.
    */
   async pdf(invoiceId: string): Promise<Uint8Array> {
-    const { pdfFacture } = await import('@boutique/facture');
+    const { pdfFacture } = await import('@boutique/documents');
     return pdfFacture(await this.documentFacture(invoiceId));
   }
 }

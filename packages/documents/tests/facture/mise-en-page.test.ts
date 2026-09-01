@@ -8,8 +8,8 @@ import {
   disposer,
   hauteurs,
   type Mesurer,
-} from '../src/mise-en-page.js';
-import type { DocumentFacture, LigneFacture } from '../src/modele.js';
+} from '../../src/index.js';
+import type { DocumentFacture, LigneFacture } from '../../src/index.js';
 
 /**
  * Une règle simple à la place des vraies métriques de police : les épreuves
@@ -27,6 +27,7 @@ function facture(lignes: LigneFacture[], extra: Partial<DocumentFacture> = {}): 
   return {
     emetteur: { nom: 'MOBI STOCK', adresse: 'Antananarivo', nif: '1234', stat: '5678' },
     mentions: [],
+    logo: null,
     destinataire: { nom: 'Client', adresse: 'Toamasina' },
     numero: 'FA-2026-0001',
     emiseLe: '2026-09-01T08:00:00.000Z',
@@ -39,6 +40,8 @@ function facture(lignes: LigneFacture[], extra: Partial<DocumentFacture> = {}): 
     regle: 0,
     reglements: [],
     devise: DEFAULT_CURRENCY,
+    conditions: '',
+    signatures: null,
     piedDePage: '',
     ...extra,
   };
@@ -201,5 +204,61 @@ describe('désignation tronquée', () => {
   it('ne signale rien quand tout tient', () => {
     const pages = disposer(facture([article(1)]), mesurer);
     expect(pages[0]?.rangees[0]?.designation.join('')).not.toMatch(/…/);
+  });
+});
+
+describe('logo, conditions et signatures', () => {
+  // Un PNG minuscule mais VALIDE : ce qui compte ici n'est pas l'image, c'est
+  // que sa présence réserve la place du cadre.
+  const LOGO =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  it('réserve la place du logo, quelle que soit la taille de l’image', () => {
+    const sans = hauteurs(facture([article(1)]), mesurer);
+    const avec = hauteurs(facture([article(1)], { logo: LOGO }), mesurer);
+
+    // Le cadre est une BORNE : la hauteur réservée ne dépend pas des pixels de
+    // l'image, sans quoi un logo de deux mille pixels repousserait le tableau
+    // hors de la page.
+    expect(avec.enTetePremiere - sans.enTetePremiere).toBe(MISE_EN_PAGE.logo.hauteur + 8);
+  });
+
+  it('réserve la place des conditions de vente', () => {
+    const sans = hauteurs(facture([article(1)]), mesurer);
+    const avec = hauteurs(
+      facture([article(1)], { conditions: 'Marchandise vendue non reprise après huit jours.' }),
+      mesurer,
+    );
+    expect(avec.pied).toBeGreaterThan(sans.pied);
+  });
+
+  it('réserve la place des cases à signer', () => {
+    const sans = hauteurs(facture([article(1)]), mesurer);
+    const avec = hauteurs(
+      facture([article(1)], { signatures: { gauche: 'Le vendeur', droite: 'Le client' } }),
+      mesurer,
+    );
+    expect(avec.pied - sans.pied).toBe(MISE_EN_PAGE.hauteurSignature + 12);
+  });
+
+  it('ne fait toujours pas déborder une page, tout compris', () => {
+    for (const combien of [1, 20, 60, 200]) {
+      const doc = facture(
+        Array.from({ length: combien }, (_, rang) => article(rang + 1)),
+        {
+          logo: LOGO,
+          conditions:
+            'Marchandise vendue non reprise passé huit jours. La garantie ne couvre ni la casse ni l’oxydation. Tout retard de paiement entraîne une pénalité au taux légal en vigueur à Madagascar.',
+          signatures: { gauche: 'Le vendeur', droite: 'Le client' },
+          mentions: [
+            { libelle: 'RCS', valeur: 'Antananarivo 2019 B 00123' },
+            { libelle: 'Banque', valeur: 'BNI 000 1234 5678' },
+          ],
+        },
+      );
+      for (const page of disposer(doc, mesurer)) {
+        expect(occupation(doc, page)).toBeLessThanOrEqual(A4.hauteur - 2 * MISE_EN_PAGE.marge);
+      }
+    }
   });
 });
