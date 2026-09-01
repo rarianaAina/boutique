@@ -1,5 +1,6 @@
 import { DEFAULT_CURRENCY, DEFAULT_NUMBERING, nowIso } from '@boutique/shared';
 import type { CurrencyFormat, NumberingRule } from '@boutique/shared';
+import type { Mention } from '@boutique/facture';
 import type { CostMethod } from '../../services/cost.service';
 import { parseJson, toJson } from '../rows';
 import type { SqlExecutor } from '../client';
@@ -19,6 +20,8 @@ export const SETTING_KEYS = {
   numbering: 'commerce.numbering',
   receiptHeader: 'print.receipt_header',
   receiptFooter: 'print.receipt_footer',
+  invoiceMentions: 'facture.mentions',
+  invoiceFooter: 'facture.pied',
   lowStockThreshold: 'stock.low_threshold',
   allowNegativeStock: 'stock.allow_negative',
   strictImeiChecksum: 'stock.strict_imei',
@@ -73,6 +76,21 @@ export interface ShopSettings {
   numbering: Record<string, NumberingRule>;
   receiptHeader: string;
   receiptFooter: string;
+  /**
+   * Mentions libres imprimées en tête de facture, sous les coordonnées.
+   *
+   * Registre du commerce, capital, coordonnées bancaires, numéro Mvola : ce
+   * que chaque société doit ou veut faire figurer varie, et une colonne par
+   * mention imposerait une migration à chaque nouveau besoin.
+   */
+  invoiceMentions: Mention[];
+  /**
+   * Mentions légales de bas de facture.
+   *
+   * Distinctes du pied de ticket : un ticket de caisse dit « merci de votre
+   * visite », une facture dit le régime de TVA et les pénalités de retard.
+   */
+  invoiceFooter: string;
   /** Seuil d'alerte quand un produit n'en définit pas lui-même. */
   lowStockThreshold: number;
   /**
@@ -115,6 +133,8 @@ export const DEFAULT_SETTINGS: ShopSettings = {
   numbering: DEFAULT_NUMBERING,
   receiptHeader: '',
   receiptFooter: 'Merci de votre visite.',
+  invoiceMentions: [],
+  invoiceFooter: '',
   lowStockThreshold: 3,
   allowNegativeStock: false,
   strictImeiChecksum: true,
@@ -163,6 +183,8 @@ export class SettingRepository {
       numbering: { ...DEFAULT_NUMBERING, ...read(SETTING_KEYS.numbering, {}) },
       receiptHeader: read(SETTING_KEYS.receiptHeader, DEFAULT_SETTINGS.receiptHeader),
       receiptFooter: read(SETTING_KEYS.receiptFooter, DEFAULT_SETTINGS.receiptFooter),
+      invoiceMentions: read(SETTING_KEYS.invoiceMentions, DEFAULT_SETTINGS.invoiceMentions),
+      invoiceFooter: read(SETTING_KEYS.invoiceFooter, DEFAULT_SETTINGS.invoiceFooter),
       lowStockThreshold: read(SETTING_KEYS.lowStockThreshold, DEFAULT_SETTINGS.lowStockThreshold),
       allowNegativeStock: read(
         SETTING_KEYS.allowNegativeStock,

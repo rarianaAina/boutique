@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DEFAULT_NUMBERING, PERMISSIONS, formatDocumentNumber } from '@boutique/shared';
+import type { Mention } from '@boutique/facture';
 import { SettingRepository, SETTING_KEYS } from '@/core/db/repositories/setting.repository';
 import { ShopRepository } from '@/core/db/repositories/shop.repository';
 import { Licence } from './Licence';
@@ -58,6 +59,15 @@ export function Parametres() {
   const [occupe, setOccupe] = useState(false);
   const [demonstration, setDemonstration] = useState(false);
   const [integrite, setIntegrite] = useState<string | null>(null);
+  /**
+   * Mentions libres de la facture.
+   *
+   * Une LISTE et non des champs fixes : ce qu'une société doit ou veut faire
+   * figurer — registre du commerce, capital, banque, numéro Mvola — varie de
+   * l'une à l'autre, et une case par mention obligerait à toucher au logiciel
+   * à chaque nouveau besoin.
+   */
+  const [mentions, setMentions] = useState<Mention[]>(settings.invoiceMentions);
 
   const boutique = useChargement(
     async () => (db ? new ShopRepository(db).byId(shopId) : null),
@@ -71,6 +81,11 @@ export function Parametres() {
     async () => new BackupService(contexte).lastBackupAt(),
     [contexte.db, sauvegardes.donnees],
   );
+
+  const modifierMention = (rang: number, parties: Partial<Mention>) =>
+    setMentions((precedent) =>
+      precedent.map((mention, autre) => (autre === rang ? { ...mention, ...parties } : mention)),
+    );
 
   const champ = (cle: string, defaut: string) => valeurs[cle] ?? defaut;
   const changer = (cle: string, valeur: string) =>
@@ -104,6 +119,18 @@ export function Parametres() {
       await depot.set(SETTING_KEYS.receiptHeader, champ('entete', settings.receiptHeader), shopId);
       await depot.set(SETTING_KEYS.receiptFooter, champ('pied', settings.receiptFooter), shopId);
       await depot.set(
+        SETTING_KEYS.invoiceMentions,
+        // Une mention sans libellé ni valeur n'a rien à faire sur une facture :
+        // c'est une ligne qu'on a commencée puis abandonnée.
+        mentions.filter((mention) => mention.libelle.trim() !== '' || mention.valeur.trim() !== ''),
+        shopId,
+      );
+      await depot.set(
+        SETTING_KEYS.invoiceFooter,
+        champ('piedFacture', settings.invoiceFooter),
+        shopId,
+      );
+      await depot.set(
         SETTING_KEYS.lowStockThreshold,
         Number(champ('seuil', String(settings.lowStockThreshold))) || 0,
         shopId,
@@ -125,6 +152,8 @@ export function Parametres() {
         address: champ('adresse', boutique.donnees?.address ?? ''),
         phone: champ('telephone', boutique.donnees?.phone ?? ''),
         email: champ('email', boutique.donnees?.email ?? ''),
+        nif: champ('nif', boutique.donnees?.nif ?? ''),
+        stat: champ('stat', boutique.donnees?.stat ?? ''),
       });
 
       await rechargerParametres();
@@ -229,6 +258,24 @@ export function Parametres() {
                 value={champ('adresse', boutique.donnees?.address ?? '')}
                 onChange={(e) => changer('adresse', e.target.value)}
               />
+              {/*
+                Sans NIF ni STAT, une facture n'a aucune valeur pour la
+                comptabilité d'une entreprise cliente : elle ne peut ni la
+                déduire, ni la produire en cas de contrôle.
+              */}
+              <div className="grid grid-cols-2 gap-3">
+                <Champ
+                  label="NIF"
+                  value={champ('nif', boutique.donnees?.nif ?? '')}
+                  onChange={(e) => changer('nif', e.target.value)}
+                  aide="Imprimé sur les factures."
+                />
+                <Champ
+                  label="STAT"
+                  value={champ('stat', boutique.donnees?.stat ?? '')}
+                  onChange={(e) => changer('stat', e.target.value)}
+                />
+              </div>
             </div>
           )}
         </Carte>
@@ -309,6 +356,47 @@ export function Parametres() {
               onChange={(e) => changer('pied', e.target.value)}
               aide="Conditions de retour, remerciements…"
             />
+
+            <ZoneTexte
+              label="Mentions légales de la facture"
+              rows={3}
+              value={champ('piedFacture', settings.invoiceFooter)}
+              onChange={(e) => changer('piedFacture', e.target.value)}
+              aide="Régime de TVA, garantie, pénalités de retard. Distinct du pied de ticket."
+            />
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Mentions en tête de facture</p>
+              <p className="text-xs text-encre-600">
+                Registre du commerce, capital, banque, numéro Mvola… Elles s’impriment sous les
+                coordonnées de la boutique.
+              </p>
+              {mentions.map((mention, rang) => (
+                <div key={rang} className="flex items-end gap-2">
+                  <Champ
+                    label={rang === 0 ? 'Libellé' : ''}
+                    className="w-40"
+                    value={mention.libelle}
+                    onChange={(e) => modifierMention(rang, { libelle: e.target.value })}
+                  />
+                  <Champ
+                    label={rang === 0 ? 'Valeur' : ''}
+                    className="flex-1"
+                    value={mention.valeur}
+                    onChange={(e) => modifierMention(rang, { valeur: e.target.value })}
+                  />
+                  <Bouton
+                    icone="poubelle"
+                    onClick={() => setMentions(mentions.filter((_, autre) => autre !== rang))}
+                  >
+                    Retirer
+                  </Bouton>
+                </div>
+              ))}
+              <Bouton onClick={() => setMentions([...mentions, { libelle: '', valeur: '' }])}>
+                Ajouter une mention
+              </Bouton>
+            </div>
           </div>
         </Carte>
 

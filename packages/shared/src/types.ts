@@ -49,6 +49,10 @@ export interface Shop extends Traceable {
   address: string | null;
   phone: string | null;
   email: string | null;
+  /** Numéro d'identification fiscale, imprimé sur les factures. */
+  nif: string | null;
+  /** Numéro statistique, imprimé sur les factures. */
+  stat: string | null;
   status: ShopStatus;
   /** Vrai pour la boutique installée sur CE poste. Une seule à la fois. */
   isLocal: boolean;
@@ -241,6 +245,14 @@ export interface Customer extends Traceable {
   phone: string | null;
   email: string | null;
   address: string | null;
+  /**
+   * NIF et STAT du client, quand c'en est un professionnel.
+   *
+   * Sans eux, la comptabilité d'une entreprise cliente refuse la facture. Un
+   * particulier n'en a pas : les deux restent facultatifs.
+   */
+  nif: string | null;
+  stat: string | null;
   notes: string | null;
 }
 

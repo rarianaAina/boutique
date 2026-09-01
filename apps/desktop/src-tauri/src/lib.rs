@@ -36,6 +36,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0004_reglages_poste.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "identifiants fiscaux : NIF et STAT de l'émetteur et du destinataire",
+            sql: include_str!("../migrations/0005_identifiants_fiscaux.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

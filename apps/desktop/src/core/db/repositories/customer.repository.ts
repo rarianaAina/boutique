@@ -12,6 +12,8 @@ interface CustomerRow {
   phone: string | null;
   email: string | null;
   address: string | null;
+  nif: string | null;
+  stat: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -26,6 +28,8 @@ const toCustomer = (row: CustomerRow): Customer => ({
   phone: row.phone,
   email: row.email,
   address: row.address,
+  nif: row.nif,
+  stat: row.stat,
   notes: row.notes,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -38,6 +42,9 @@ export interface CustomerInput {
   phone?: string | null;
   email?: string | null;
   address?: string | null;
+  /** NIF et STAT, pour un client professionnel. Voir la migration 0005. */
+  nif?: string | null;
+  stat?: string | null;
   notes?: string | null;
   shopId?: string | null;
 }
@@ -78,9 +85,9 @@ export class CustomerRepository {
   async create(input: CustomerInput, id = newId()): Promise<string> {
     const at = nowIso();
     await this.db.execute(
-      `INSERT INTO customer (id, shop_id, first_name, last_name, phone, email, address, notes,
-                             search_key, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO customer (id, shop_id, first_name, last_name, phone, email, address,
+                             nif, stat, notes, search_key, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         input.shopId ?? null,
@@ -89,6 +96,8 @@ export class CustomerRepository {
         input.phone ?? null,
         input.email ?? null,
         input.address ?? null,
+        input.nif ?? null,
+        input.stat ?? null,
         input.notes ?? null,
         buildSearchKey(input.firstName, input.lastName, input.phone, input.email),
         at,
@@ -101,7 +110,7 @@ export class CustomerRepository {
   async update(id: string, input: CustomerInput): Promise<void> {
     await this.db.execute(
       `UPDATE customer SET first_name = ?, last_name = ?, phone = ?, email = ?, address = ?,
-              notes = ?, search_key = ?, updated_at = ?
+              nif = ?, stat = ?, notes = ?, search_key = ?, updated_at = ?
        WHERE id = ?`,
       [
         input.firstName ?? null,
@@ -109,6 +118,8 @@ export class CustomerRepository {
         input.phone ?? null,
         input.email ?? null,
         input.address ?? null,
+        input.nif ?? null,
+        input.stat ?? null,
         input.notes ?? null,
         buildSearchKey(input.firstName, input.lastName, input.phone, input.email),
         nowIso(),

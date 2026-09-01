@@ -136,6 +136,8 @@ function FicheClient({
         phone: champ('phone', client?.phone ?? '') || null,
         email: champ('email', client?.email ?? '') || null,
         address: champ('address', client?.address ?? '') || null,
+        nif: champ('nif', client?.nif ?? '').trim() || null,
+        stat: champ('stat', client?.stat ?? '').trim() || null,
         notes: champ('notes', client?.notes ?? '') || null,
         shopId,
       };
@@ -227,6 +229,24 @@ function FicheClient({
           value={champ('address', client?.address ?? '')}
           onChange={(e) => changer('address', e.target.value)}
         />
+        {/*
+          NIF et STAT n'ont de sens que pour un client PROFESSIONNEL : sans
+          eux, sa comptabilité refuse la facture. Un particulier laisse les
+          deux champs vides, et ils ne s'impriment pas.
+        */}
+        <div className="grid grid-cols-2 gap-3">
+          <Champ
+            label="NIF"
+            value={champ('nif', client?.nif ?? '')}
+            onChange={(e) => changer('nif', e.target.value)}
+            aide="Client professionnel uniquement."
+          />
+          <Champ
+            label="STAT"
+            value={champ('stat', client?.stat ?? '')}
+            onChange={(e) => changer('stat', e.target.value)}
+          />
+        </div>
         <ZoneTexte
           label="Notes"
           rows={2}

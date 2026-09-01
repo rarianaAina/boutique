@@ -19,6 +19,8 @@ interface ShopRow {
   address: string | null;
   phone: string | null;
   email: string | null;
+  nif: string | null;
+  stat: string | null;
   status: ShopStatus;
   is_local: number;
   created_at: string;
@@ -33,6 +35,8 @@ const toShop = (row: ShopRow): Shop => ({
   address: row.address,
   phone: row.phone,
   email: row.email,
+  nif: row.nif,
+  stat: row.stat,
   status: row.status,
   isLocal: toBool(row.is_local),
   createdAt: row.created_at,
@@ -46,6 +50,9 @@ export interface ShopInput {
   address?: string | null;
   phone?: string | null;
   email?: string | null;
+  /** NIF et STAT de l'émetteur, imprimés en tête de facture. */
+  nif?: string | null;
+  stat?: string | null;
   status?: ShopStatus;
   isLocal?: boolean;
 }
@@ -81,9 +88,9 @@ export class ShopRepository {
   async create(input: ShopInput, id = newId()): Promise<string> {
     const at = nowIso();
     await this.db.execute(
-      `INSERT INTO shop (id, code, name, address, phone, email, status, is_local,
+      `INSERT INTO shop (id, code, name, address, phone, email, nif, stat, status, is_local,
                          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         input.code.toUpperCase(),
@@ -91,6 +98,8 @@ export class ShopRepository {
         input.address ?? null,
         input.phone ?? null,
         input.email ?? null,
+        input.nif ?? null,
+        input.stat ?? null,
         input.status ?? 'ACTIVE',
         fromBool(input.isLocal ?? false),
         at,
@@ -108,6 +117,8 @@ export class ShopRepository {
          address = COALESCE(?, address),
          phone = COALESCE(?, phone),
          email = COALESCE(?, email),
+         nif = COALESCE(?, nif),
+         stat = COALESCE(?, stat),
          status = COALESCE(?, status),
          updated_at = ?
        WHERE id = ?`,
@@ -117,6 +128,8 @@ export class ShopRepository {
         input.address ?? null,
         input.phone ?? null,
         input.email ?? null,
+        input.nif ?? null,
+        input.stat ?? null,
         input.status ?? null,
         nowIso(),
         id,

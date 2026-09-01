@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { INVOICE_LABELS, INVOICE_STATUS, valuesOf } from '@boutique/shared';
 import { InvoiceRepository } from '@/core/db/repositories/invoice.repository';
+import { ShopRepository } from '@/core/db/repositories/shop.repository';
 import { InvoiceService } from '@/core/services/invoice.service';
 import { toCsv, csvMoney, exportFileName } from '@/core/services/export.service';
 import { Carte, Chargement, EnTetePage, Erreur } from '@/components/ui/Page';
@@ -12,7 +13,7 @@ import { BarreFiltres, ListeFiltre, Pagination, Tableau } from '@/components/ui/
 import { useNotifications } from '@/components/ui/Notifications';
 import { useContexte, useSession } from '@/app/session';
 import { formaterDate, messageDe, useChargement, useMonnaie } from '@/app/hooks';
-import { telecharger } from '@/features/gestion/telechargement';
+import { enregistrerBinaire, telecharger } from '@/features/gestion/telechargement';
 
 /**
  * Factures (§13).
@@ -153,10 +154,15 @@ function FicheFacture({
   const monnaie = useMonnaie();
   const [montant, setMontant] = useState('');
   const [occupe, setOccupe] = useState(false);
+  const [edition, setEdition] = useState(false);
 
   const etat = useChargement(
     async () => new InvoiceService(contexte).document(invoiceId),
     [contexte.db, invoiceId],
+  );
+  const boutique = useChargement(
+    async () => new ShopRepository(contexte.db).byId(contexte.shopId),
+    [contexte.db, contexte.shopId],
   );
 
   const encaisser = async () => {
@@ -174,8 +180,33 @@ function FicheFacture({
     }
   };
 
+  /**
+   * Produit le PDF et le propose à l'enregistrement.
+   *
+   * Un VRAI fichier, et non l'impression du navigateur : une facture se joint
+   * à un message, se garde, se ressort trois ans plus tard pour une garantie.
+   */
+  const enregistrerPdf = async () => {
+    setEdition(true);
+    try {
+      const octets = await new InvoiceService(contexte).pdf(invoiceId);
+      const chemin = await enregistrerBinaire(
+        `Facture-${facture?.number ?? invoiceId}.pdf`,
+        octets,
+        'Document PDF',
+        'pdf',
+      );
+      if (chemin) notifier('Facture enregistrée.');
+    } catch (cause) {
+      notifier(messageDe(cause), 'erreur');
+    } finally {
+      setEdition(false);
+    }
+  };
+
   const facture = etat.donnees?.invoice;
   const vente = etat.donnees?.sale;
+  const emetteur = boutique.donnees ?? null;
   const reste = facture ? facture.total - facture.paid : 0;
 
   return (
@@ -186,12 +217,23 @@ function FicheFacture({
       largeur="lg"
       pied={
         <>
-          <Bouton icone="facture" onClick={() => window.print()}>
-            Imprimer
+          {/*
+            UNE SEULE PIÈCE. L'impression du bloc ci-dessous par le navigateur
+            existait avant le PDF : elle produisait un document SANS les
+            mentions fiscales, qu'une comptabilité refuse. Deux versions
+            différentes d'une même facture, selon le bouton pressé, était le
+            plus sûr moyen d'en voir circuler une mauvaise. Le PDF s'ouvre dans
+            le lecteur du poste, où l'impression est à un clic.
+          */}
+          <Bouton
+            variante="principal"
+            icone="facture"
+            occupe={edition}
+            onClick={() => void enregistrerPdf()}
+          >
+            Enregistrer en PDF
           </Bouton>
-          <Bouton variante="principal" onClick={onFermer}>
-            Fermer
-          </Bouton>
+          <Bouton onClick={onFermer}>Fermer</Bouton>
         </>
       }
     >
@@ -209,7 +251,30 @@ function FicheFacture({
             <div className="mb-4 flex items-start justify-between">
               <div>
                 <p className="text-lg font-bold uppercase">{shopName}</p>
-                <p className="text-xs text-encre-600">{settings.receiptHeader}</p>
+                {/*
+                  L'aperçu montre CE QUE PORTERA LE PDF, mentions fiscales
+                  comprises : un aperçu qui dirait autre chose que la pièce
+                  produite ne servirait qu'à tromper celui qui la relit.
+                */}
+                {emetteur?.nif || emetteur?.stat ? (
+                  <p className="text-xs text-encre-600">
+                    {[
+                      emetteur?.nif ? `NIF ${emetteur.nif}` : null,
+                      emetteur?.stat ? `STAT ${emetteur.stat}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join('   ')}
+                  </p>
+                ) : (
+                  <p className="text-xs text-danger-700">
+                    NIF et STAT non renseignés — à compléter dans les paramètres.
+                  </p>
+                )}
+                {settings.invoiceMentions.map((mention) => (
+                  <p key={mention.libelle} className="text-xs text-encre-600">
+                    {mention.libelle} : {mention.valeur}
+                  </p>
+                ))}
               </div>
               <div className="text-right">
                 <p className="text-sm font-semibold">FACTURE</p>

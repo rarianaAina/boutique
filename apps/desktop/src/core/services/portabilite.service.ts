@@ -32,7 +32,7 @@ export const FORMAT_ARCHIVE = 1;
  * tables ou les colonnes qu'elle porte n'existeraient pas encore ici. Refuser
  * vaut mieux que perdre la moitié des données en silence.
  */
-export const VERSION_STRUCTURE = 4;
+export const VERSION_STRUCTURE = 5;
 
 /**
  * Tables emportées, DANS L'ORDRE D'INSERTION.
