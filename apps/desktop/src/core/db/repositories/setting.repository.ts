@@ -34,7 +34,7 @@ export const SETTING_KEYS = {
  *
  * La licence active un poste : la rattacher à une boutique la ferait
  * disparaître le jour où l'on change de boutique locale, et réapparaître
- * ailleurs. Ils sont donc écrits avec `shop_id` NULL, et lus tels quels.
+ * ailleurs. Ils sont donc écrits avec `shop_id` vide, et lus tels quels.
  *
  * Ils ne figurent pas dans `ShopSettings` : ce ne sont pas des préférences de
  * commerce, et les mélanger exposerait la clé à l'écran des paramètres généraux.
@@ -54,6 +54,16 @@ export const POSTE_KEYS = {
    */
   recoveryHash: 'securite.cle_secours',
 } as const;
+
+/**
+ * `shop_id` d'un réglage qui n'appartient à aucune boutique.
+ *
+ * Une chaîne vide, pas un NULL, et la migration 0004 dit pourquoi : SQLite
+ * tient deux NULL pour distincts, si bien que la clé primaire `(key, shop_id)`
+ * ne s'opposait à rien et que chaque écriture ajoutait une ligne au lieu d'en
+ * remplacer une. Postgres, de son côté, refuse un NULL dans une clé primaire.
+ */
+export const POSTE = '';
 
 export interface ShopSettings {
   currency: CurrencyFormat;
@@ -126,17 +136,18 @@ export class SettingRepository {
   /**
    * Lit tous les paramètres d'une boutique, complétés par les valeurs de repli.
    *
-   * Un paramètre défini pour la boutique l'emporte sur celui du poste
-   * (`shop_id` NULL) : c'est ce qui permet de partager un serveur de
-   * synchronisation entre plusieurs boutiques d'un même poste tout en laissant
-   * chacune fixer sa propre devise.
+   * Un paramètre défini pour la boutique l'emporte sur celui du poste : c'est
+   * ce qui permet de partager un serveur de synchronisation entre plusieurs
+   * boutiques d'un même poste tout en laissant chacune fixer sa propre devise.
    */
   async load(shopId: string): Promise<ShopSettings> {
     const rows = await this.db.select<SettingRow>(
+      // Le poste d'abord, la boutique ensuite : la seconde écrase le premier
+      // dans la table de correspondance construite plus bas.
       `SELECT key, value FROM setting
-       WHERE shop_id IS NULL OR shop_id = ?
-       ORDER BY (shop_id IS NULL) DESC`,
-      [shopId],
+       WHERE shop_id = ? OR shop_id = ?
+       ORDER BY CASE shop_id WHEN ? THEN 0 ELSE 1 END`,
+      [POSTE, shopId, POSTE],
     );
 
     const map = new Map<string, string>();
@@ -178,12 +189,8 @@ export class SettingRepository {
    */
   async raw(key: string): Promise<string | null> {
     const rows = await this.db.select<SettingRow>(
-      // `ORDER BY updated_at DESC` par PRUDENCE : les bases écrites par une
-      // version antérieure peuvent porter plusieurs lignes pour la même clé
-      // (voir `set`). On y lit alors la plus récente, qui est la bonne.
-      `SELECT key, value FROM setting WHERE key = ? AND shop_id IS NULL
-        ORDER BY updated_at DESC LIMIT 1`,
-      [key],
+      `SELECT key, value FROM setting WHERE key = ? AND shop_id = ?`,
+      [key, POSTE],
     );
     const brut = rows[0]?.value;
     if (brut === undefined) return null;
@@ -193,34 +200,18 @@ export class SettingRepository {
   /**
    * Écrit un réglage.
    *
-   * DEUX CHEMINS, ET LE SECOND N'EST PAS UN CAPRICE. La clé primaire de la
-   * table est `(key, shop_id)`, et SQLite considère deux NULL comme DISTINCTS :
-   * pour un réglage du poste — `shop_id` NULL — la clause `ON CONFLICT` ne se
-   * déclenche jamais, et chaque écriture ajoutait une ligne de plus.
-   *
-   * Les conséquences n'étaient pas cosmétiques : le cliquet d'horloge de la
-   * licence, réécrit à chaque vérification, n'avançait jamais puisqu'on relisait
-   * la première ligne ; effacer une clé de licence ne l'effaçait pas ; et une
-   * clé de secours renouvelée laissait l'ancienne valable.
-   *
-   * On remplace donc explicitement pour ce cas. Le DELETE nettoie au passage
-   * les doublons laissés par les versions antérieures.
+   * `shopId` à `null` désigne le POSTE, et se traduit par une chaîne vide : la
+   * migration 0004 explique pourquoi la colonne ne porte plus de NULL. Tant
+   * qu'elle en portait, `ON CONFLICT` ne se déclenchait jamais pour un réglage
+   * du poste — SQLite tient deux NULL pour distincts — et chaque écriture
+   * ajoutait une ligne au lieu d'en remplacer une.
    */
   async set(key: string, value: unknown, shopId: string | null): Promise<void> {
-    if (shopId === null) {
-      await this.db.execute('DELETE FROM setting WHERE key = ? AND shop_id IS NULL', [key]);
-      await this.db.execute(
-        `INSERT INTO setting (key, shop_id, value, updated_at) VALUES (?, NULL, ?, ?)`,
-        [key, toJson(value), nowIso()],
-      );
-      return;
-    }
-
     await this.db.execute(
       `INSERT INTO setting (key, shop_id, value, updated_at) VALUES (?, ?, ?, ?)
        ON CONFLICT (key, shop_id)
        DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      [key, shopId, toJson(value), nowIso()],
+      [key, shopId ?? POSTE, toJson(value), nowIso()],
     );
   }
 

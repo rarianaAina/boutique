@@ -17,7 +17,7 @@ import { ShopService } from '@/core/services/shop.service';
 import { UserService } from '@/core/services/auth.service';
 import { RoleRepository } from '@/core/db/repositories/role.repository';
 import { LicenceService } from '@/core/licence/licence.service';
-import { POSTE_KEYS, SettingRepository } from '@/core/db/repositories/setting.repository';
+import { POSTE, POSTE_KEYS, SettingRepository } from '@/core/db/repositories/setting.repository';
 import { contextFor } from './helpers/context';
 import { seedFixture, type Fixture } from './helpers/fixtures';
 
@@ -77,8 +77,8 @@ describe('identifiant d’installation', () => {
     expect(brut).not.toBeNull();
 
     const rattaches = await fixture.db.select<{ total: number }>(
-      `SELECT COUNT(*) AS total FROM setting WHERE key = ? AND shop_id IS NOT NULL`,
-      [POSTE_KEYS.installation],
+      `SELECT COUNT(*) AS total FROM setting WHERE key = ? AND shop_id <> ?`,
+      [POSTE_KEYS.installation, POSTE],
     );
     expect(rattaches[0]?.total).toBe(0);
   });
@@ -433,8 +433,8 @@ describe('réglages du poste', () => {
 
     expect(await reglages.raw(POSTE_KEYS.dateRatchet)).toBe('3000');
     const lignes = await fixture.db.select<{ total: number }>(
-      'SELECT COUNT(*) AS total FROM setting WHERE key = ? AND shop_id IS NULL',
-      [POSTE_KEYS.dateRatchet],
+      'SELECT COUNT(*) AS total FROM setting WHERE key = ? AND shop_id = ?',
+      [POSTE_KEYS.dateRatchet, POSTE],
     );
     expect(lignes[0]?.total).toBe(1);
   });

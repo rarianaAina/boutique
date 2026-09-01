@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { SqlExecutor } from '@/core/db/client';
 
@@ -18,12 +18,22 @@ import type { SqlExecutor } from '@/core/db/client';
 
 /**
  * Les migrations sont appliquées DANS L'ORDRE, comme le fait tauri-plugin-sql
- * au démarrage. Les lister à la main plutôt que de balayer le dossier serait
- * la garantie d'en oublier une le jour où on en ajoute.
+ * au démarrage.
+ *
+ * Le dossier est BALAYÉ plutôt que recopié : les noms commencent par un numéro,
+ * l'ordre alphabétique est donc l'ordre d'application. Une liste tenue à la
+ * main serait la garantie d'oublier la migration suivante — le nom de chaque
+ * migration figure déjà dans `lib.rs`, où le compilateur l'exige, et une
+ * seconde copie ici ne se maintiendrait pas toute seule.
  */
-const MIGRATIONS = ['0001_init.sql', '0002_variantes.sql', '0003_historique_prix.sql'].map((nom) =>
-  fileURLToPath(new URL(`../../src-tauri/migrations/${nom}`, import.meta.url)),
+export const DOSSIER_MIGRATIONS = fileURLToPath(
+  new URL('../../src-tauri/migrations/', import.meta.url),
 );
+
+const MIGRATIONS = readdirSync(DOSSIER_MIGRATIONS)
+  .filter((nom) => nom.endsWith('.sql'))
+  .sort()
+  .map((nom) => `${DOSSIER_MIGRATIONS}${nom}`);
 
 export class TestExecutor implements SqlExecutor {
   constructor(readonly raw: DatabaseSync) {}

@@ -10,7 +10,7 @@ import { AuthService, UserService } from '@/core/services/auth.service';
 import { SetupService } from '@/core/services/setup.service';
 import { RoleRepository } from '@/core/db/repositories/role.repository';
 import { UserRepository } from '@/core/db/repositories/user.repository';
-import { POSTE_KEYS, SettingRepository } from '@/core/db/repositories/setting.repository';
+import { POSTE, POSTE_KEYS, SettingRepository } from '@/core/db/repositories/setting.repository';
 import { createTestDb, type TestExecutor } from './helpers/sqlite-executor';
 import { contextFor } from './helpers/context';
 import { seedFixture, type Fixture } from './helpers/fixtures';
@@ -101,8 +101,8 @@ describe('remise à l’installation', () => {
   it('la range au POSTE, pas à une boutique', async () => {
     await installer();
     const rattachees = await db.select<{ total: number }>(
-      `SELECT COUNT(*) AS total FROM setting WHERE key = ? AND shop_id IS NOT NULL`,
-      [POSTE_KEYS.recoveryHash],
+      `SELECT COUNT(*) AS total FROM setting WHERE key = ? AND shop_id <> ?`,
+      [POSTE_KEYS.recoveryHash, POSTE],
     );
     expect(rattachees[0]?.total).toBe(0);
   });

@@ -30,6 +30,12 @@ fn migrations() -> Vec<Migration> {
             sql: include_str!("../migrations/0003_historique_prix.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "réglages du poste : shop_id vide plutôt que NULL, et doublons effacés",
+            sql: include_str!("../migrations/0004_reglages_poste.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

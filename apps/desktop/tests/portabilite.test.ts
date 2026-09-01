@@ -10,7 +10,7 @@ import { SaleService } from '@/core/services/sale.service';
 import { StockService } from '@/core/services/stock.service';
 import { AuthService } from '@/core/services/auth.service';
 import { SetupService } from '@/core/services/setup.service';
-import { POSTE_KEYS, SettingRepository } from '@/core/db/repositories/setting.repository';
+import { POSTE, POSTE_KEYS, SettingRepository } from '@/core/db/repositories/setting.repository';
 import { createTestDb, type TestExecutor } from './helpers/sqlite-executor';
 import { contextFor } from './helpers/context';
 import { imeiSeries, seedFixture, type Fixture } from './helpers/fixtures';
@@ -179,12 +179,14 @@ describe('aller-retour vers une base neuve', () => {
 
     const commerce = (base: TestExecutor) =>
       base.select<{ key: string; value: string }>(
-        `SELECT key, value FROM setting WHERE shop_id IS NOT NULL ORDER BY key`,
+        `SELECT key, value FROM setting WHERE shop_id <> ? ORDER BY key`,
+        [POSTE],
       );
     expect(await commerce(cible)).toEqual(await commerce(fixture.db));
 
     const duPoste = await cible.select<{ total: number }>(
-      'SELECT COUNT(*) AS total FROM setting WHERE shop_id IS NULL',
+      'SELECT COUNT(*) AS total FROM setting WHERE shop_id = ?',
+      [POSTE],
     );
     expect(duPoste[0]?.total).toBe(0);
   });
