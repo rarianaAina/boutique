@@ -405,3 +405,67 @@ describe('plafonds', () => {
     ).rejects.toThrow(/autorise 1 boutique/);
   });
 });
+
+/* ─── Réglages du poste ────────────────────────────────────────────────── */
+
+describe('réglages du poste', () => {
+  /**
+   * La clé primaire de `setting` est `(key, shop_id)`, et SQLite considère
+   * deux NULL comme DISTINCTS : pour un réglage du poste, `ON CONFLICT` ne se
+   * déclenchait jamais et chaque écriture ajoutait une ligne. On relisait la
+   * première — donc la plus ancienne.
+   *
+   * Ce n'était pas cosmétique. Le cliquet d'horloge, réécrit à chaque
+   * vérification de licence, n'avançait JAMAIS : reculer la date du poste
+   * aurait prolongé indéfiniment une licence échue.
+   */
+  let fixture: Fixture;
+
+  beforeEach(async () => {
+    fixture = await seedFixture();
+  });
+
+  it('remplace la valeur au lieu d’en empiler une seconde', async () => {
+    const reglages = new SettingRepository(fixture.db);
+    await reglages.set(POSTE_KEYS.dateRatchet, '1000', null);
+    await reglages.set(POSTE_KEYS.dateRatchet, '2000', null);
+    await reglages.set(POSTE_KEYS.dateRatchet, '3000', null);
+
+    expect(await reglages.raw(POSTE_KEYS.dateRatchet)).toBe('3000');
+    const lignes = await fixture.db.select<{ total: number }>(
+      'SELECT COUNT(*) AS total FROM setting WHERE key = ? AND shop_id IS NULL',
+      [POSTE_KEYS.dateRatchet],
+    );
+    expect(lignes[0]?.total).toBe(1);
+  });
+
+  it('fait avancer le cliquet d’horloge', async () => {
+    const licences = new LicenceService(fixture.db);
+    await licences.status(new Date().toISOString());
+    const premier = Number(await new SettingRepository(fixture.db).raw(POSTE_KEYS.dateRatchet));
+    expect(premier).toBeGreaterThan(0);
+
+    await licences.status(new Date().toISOString());
+    const second = Number(await new SettingRepository(fixture.db).raw(POSTE_KEYS.dateRatchet));
+    expect(second).toBeGreaterThanOrEqual(premier);
+  });
+
+  it('efface vraiment une clé de licence', async () => {
+    const licences = new LicenceService(fixture.db);
+    await new SettingRepository(fixture.db).set(POSTE_KEYS.licenceKey, 'CLE-QUELCONQUE', null);
+    await licences.clear();
+    expect(await new SettingRepository(fixture.db).raw(POSTE_KEYS.licenceKey)).toBe('');
+  });
+
+  it('ne touche pas aux réglages d’une boutique', async () => {
+    const reglages = new SettingRepository(fixture.db);
+    await reglages.set('commerce.currency', { code: 'MGA' }, fixture.shopA);
+    await reglages.set(POSTE_KEYS.dateRatchet, '1234', null);
+
+    const boutique = await fixture.db.select<{ total: number }>(
+      'SELECT COUNT(*) AS total FROM setting WHERE shop_id = ?',
+      [fixture.shopA],
+    );
+    expect(boutique[0]?.total).toBe(1);
+  });
+});

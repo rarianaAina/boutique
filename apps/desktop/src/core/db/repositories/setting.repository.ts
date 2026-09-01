@@ -46,6 +46,13 @@ export const POSTE_KEYS = {
   licenceKey: 'licence.key',
   /** Cliquet d'horloge : la date la plus avancée jamais constatée. */
   dateRatchet: 'licence.ratchet',
+  /**
+   * EMPREINTE de la clé de secours de l'administrateur. Jamais la clé.
+   *
+   * Hachée comme un mot de passe : qui lirait la base ne pourrait pas s'en
+   * servir pour reprendre le compte administrateur.
+   */
+  recoveryHash: 'securite.cle_secours',
 } as const;
 
 export interface ShopSettings {
@@ -171,7 +178,11 @@ export class SettingRepository {
    */
   async raw(key: string): Promise<string | null> {
     const rows = await this.db.select<SettingRow>(
-      `SELECT key, value FROM setting WHERE key = ? AND shop_id IS NULL`,
+      // `ORDER BY updated_at DESC` par PRUDENCE : les bases écrites par une
+      // version antérieure peuvent porter plusieurs lignes pour la même clé
+      // (voir `set`). On y lit alors la plus récente, qui est la bonne.
+      `SELECT key, value FROM setting WHERE key = ? AND shop_id IS NULL
+        ORDER BY updated_at DESC LIMIT 1`,
       [key],
     );
     const brut = rows[0]?.value;
@@ -179,7 +190,32 @@ export class SettingRepository {
     return parseJson<string>(brut, '');
   }
 
+  /**
+   * Écrit un réglage.
+   *
+   * DEUX CHEMINS, ET LE SECOND N'EST PAS UN CAPRICE. La clé primaire de la
+   * table est `(key, shop_id)`, et SQLite considère deux NULL comme DISTINCTS :
+   * pour un réglage du poste — `shop_id` NULL — la clause `ON CONFLICT` ne se
+   * déclenche jamais, et chaque écriture ajoutait une ligne de plus.
+   *
+   * Les conséquences n'étaient pas cosmétiques : le cliquet d'horloge de la
+   * licence, réécrit à chaque vérification, n'avançait jamais puisqu'on relisait
+   * la première ligne ; effacer une clé de licence ne l'effaçait pas ; et une
+   * clé de secours renouvelée laissait l'ancienne valable.
+   *
+   * On remplace donc explicitement pour ce cas. Le DELETE nettoie au passage
+   * les doublons laissés par les versions antérieures.
+   */
   async set(key: string, value: unknown, shopId: string | null): Promise<void> {
+    if (shopId === null) {
+      await this.db.execute('DELETE FROM setting WHERE key = ? AND shop_id IS NULL', [key]);
+      await this.db.execute(
+        `INSERT INTO setting (key, shop_id, value, updated_at) VALUES (?, NULL, ?, ?)`,
+        [key, toJson(value), nowIso()],
+      );
+      return;
+    }
+
     await this.db.execute(
       `INSERT INTO setting (key, shop_id, value, updated_at) VALUES (?, ?, ?, ?)
        ON CONFLICT (key, shop_id)
