@@ -239,11 +239,23 @@ jobs:
       - name: Préparation du projet Android
         run: pnpm --filter @boutique/desktop tauri android init --ci --skip-targets-install
 
-      # UN APK PAR ARCHITECTURE. Le paquet unique pesait cent cinquante-six
-      # mégaoctets parce qu'il portait le code machine de toutes les
-      # architectures à la fois ; découpé, chacun tient dans le tiers. Presque
-      # tous les appareils d'aujourd'hui prennent `arm64-v8a`.
+      # UN APK PAR ARCHITECTURE, et SANS LES INFORMATIONS DE DÉBOGAGE.
+      #
+      # Le premier paquet produit pesait cent soixante mégaoctets, dont cent
+      # soixante pour la seule bibliothèque Rust : ce n'était pas le cumul des
+      # architectures — le découpage n'y a rien changé — mais les tables DWARF
+      # d'une compilation de débogage. On les retire ICI, dans la chaîne, et
+      # non dans le profil Cargo : un développeur qui compile sur sa machine
+      # garde ses numéros de ligne.
+      #
+      # `debuginfo` et non `symbols` : la table dynamique reste nécessaire à
+      # Android pour résoudre les appels natifs, et on ne l'écarte pas pour
+      # quelques mégaoctets de plus.
+      #
+      # Presque tous les appareils d'aujourd'hui prennent `arm64-v8a`.
       - name: Compilation des APK
+        env:
+          RUSTFLAGS: -C strip=debuginfo
         run: >-
           pnpm --filter @boutique/desktop tauri android build
           --apk --debug --split-per-abi --target aarch64 armv7
