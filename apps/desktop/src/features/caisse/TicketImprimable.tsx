@@ -6,6 +6,7 @@ import { Dialogue } from '@/components/ui/Dialogue';
 import { Chargement, Erreur } from '@/components/ui/Page';
 import { useSession } from '@/app/session';
 import { formaterDate, useChargement } from '@/app/hooks';
+import { saitImprimer } from '@/core/plateforme';
 
 /**
  * Ticket de caisse (§12).
@@ -63,9 +64,16 @@ export function ApercuTicket({
       pied={
         <>
           <Bouton onClick={onFermer}>Fermer</Bouton>
-          <Bouton variante="principal" icone="ticket" onClick={() => window.print()}>
-            Imprimer
-          </Bouton>
+          {/*
+            Android n'a pas de boîte d'impression : `window.print()` n'y fait
+            RIEN, et un bouton qui ne fait rien est pire qu'un bouton absent —
+            on le presse deux fois, puis on croit que le ticket est parti.
+          */}
+          {saitImprimer() ? (
+            <Bouton variante="principal" icone="ticket" onClick={() => window.print()}>
+              Imprimer
+            </Bouton>
+          ) : null}
         </>
       }
     >

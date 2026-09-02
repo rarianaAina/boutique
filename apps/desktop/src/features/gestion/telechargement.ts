@@ -1,6 +1,9 @@
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { openPath } from '@tauri-apps/plugin-opener';
+import { BaseDirectory, readFile, writeFile } from '@tauri-apps/plugin-fs';
+import { downloadDir, join } from '@tauri-apps/api/path';
+import { estAndroid } from '@/core/plateforme';
 import { isTauriRuntime } from '@/core/db/client';
 
 /**
@@ -13,6 +16,41 @@ import { isTauriRuntime } from '@/core/db/client';
  * Hors Tauri (développement dans un navigateur), on retombe sur un lien de
  * téléchargement : l'écran reste utilisable sans lancer l'application complète.
  */
+/**
+ * ANDROID N'A PAS DE CHEMINS DE FICHIERS — ou plutôt, une application n'y
+ * choisit pas où écrire. La boîte de dialogue du système rend une URI
+ * `content://` que `std::fs` ne sait pas ouvrir : la commande Rust
+ * `write_export`, qui sert le poste de travail, y échouerait.
+ *
+ * On écrit donc dans le dossier de téléchargement de l'application, par le
+ * greffon `fs` qui connaît les particularités du système, puis on ouvre le
+ * fichier — c'est de là que l'utilisateur le partagera. Il n'y a pas de choix
+ * d'emplacement, et c'est conforme à l'usage d'Android.
+ */
+async function ecrireSurAndroid(nomFichier: string, octets: Uint8Array): Promise<string> {
+  await writeFile(nomFichier, octets, { baseDir: BaseDirectory.Download });
+  const chemin = await join(await downloadDir(), nomFichier);
+  try {
+    await openPath(chemin);
+  } catch {
+    // Aucune application associée : le fichier est écrit, c'est l'essentiel.
+  }
+  return chemin;
+}
+
+/**
+ * Lit le fichier désigné par la boîte de dialogue du système.
+ *
+ * Deux chemins, pour la même raison qu'à l'écriture. Sur un poste, le
+ * dialogue rend un chemin de fichier ordinaire et la commande Rust le lit sans
+ * se soucier de la portée figée du greffon `fs`. Sur Android, il rend une URI
+ * `content://` que seul le greffon sait résoudre.
+ */
+async function lireOctets(chemin: string): Promise<Uint8Array> {
+  if (estAndroid()) return readFile(chemin);
+  return Uint8Array.from(await invoke<number[]>('read_import', { path: chemin }));
+}
+
 export async function telecharger(
   nomFichier: string,
   contenu: string,
@@ -30,6 +68,9 @@ export async function telecharger(
     return nomFichier;
   }
 
+  const octets = new TextEncoder().encode(contenu);
+  if (estAndroid()) return ecrireSurAndroid(nomFichier, octets);
+
   const chemin = await save({
     defaultPath: nomFichier,
     filters:
@@ -39,8 +80,7 @@ export async function telecharger(
   });
   if (!chemin) return null;
 
-  const octets = Array.from(new TextEncoder().encode(contenu));
-  await invoke('write_export', { path: chemin, contents: octets });
+  await invoke('write_export', { path: chemin, contents: Array.from(octets) });
   return chemin;
 }
 
@@ -68,8 +108,7 @@ export async function lireFichier(extensions: string[], libelle: string): Promis
 
   const chemin = await open({ multiple: false, filters: [{ name: libelle, extensions }] });
   if (typeof chemin !== 'string') return null;
-  const octets = await invoke<number[]>('read_import', { path: chemin });
-  return new TextDecoder().decode(new Uint8Array(octets));
+  return new TextDecoder().decode(await lireOctets(chemin));
 }
 
 /**
@@ -100,6 +139,8 @@ export async function enregistrerBinaire(
     URL.revokeObjectURL(lien.href);
     return nomFichier;
   }
+
+  if (estAndroid()) return ecrireSurAndroid(nomFichier, octets);
 
   const chemin = await save({
     defaultPath: nomFichier,
@@ -194,11 +235,11 @@ export async function lireImage(): Promise<string | null> {
   const chemin = await open({ multiple: false, filters: [{ name: 'Image', extensions }] });
   if (typeof chemin !== 'string') return null;
 
-  const octets = await invoke<number[]>('read_import', { path: chemin });
+  const octets = await lireOctets(chemin);
   if (octets.length > LOGO_SOURCE_MAX_OCTETS) throw new Error(TROP_GROS);
 
   const type = /\.jpe?g$/i.test(chemin) ? 'image/jpeg' : 'image/png';
-  return comprimerImage(`data:${type};base64,${base64(Uint8Array.from(octets))}`);
+  return comprimerImage(`data:${type};base64,${base64(octets)}`);
 }
 
 const TROP_GROS = `Image trop lourde : ${Math.round(LOGO_SOURCE_MAX_OCTETS / (1024 * 1024))} Mo au maximum.`;

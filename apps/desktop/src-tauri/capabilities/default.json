@@ -18,6 +18,8 @@
     "fs:default",
     "fs:allow-read-file",
     "fs:allow-write-file",
+    "fs:allow-download-read-recursive",
+    "fs:allow-download-write-recursive",
     "opener:default",
     "opener:allow-open-url",
     "opener:allow-open-path"
