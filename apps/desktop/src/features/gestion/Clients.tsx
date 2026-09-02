@@ -179,7 +179,7 @@ function FicheClient({
         {erreur ? <Erreur message={erreur} /> : null}
 
         {historique ? (
-          <div className="grid grid-cols-3 gap-3 rounded-md bg-encre-50 px-3 py-2.5 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-md bg-encre-50 px-3 py-2.5 text-sm">
             <div>
               <p className="text-xs text-encre-500">Achats</p>
               <p className="font-medium" data-nombre>
@@ -201,7 +201,7 @@ function FicheClient({
           </div>
         ) : null}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Champ
             label="Nom"
             requis
@@ -234,7 +234,7 @@ function FicheClient({
           eux, sa comptabilité refuse la facture. Un particulier laisse les
           deux champs vides, et ils ne s'impriment pas.
         */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Champ
             label="NIF"
             value={champ('nif', client?.nif ?? '')}

@@ -158,7 +158,7 @@ export function Rapports() {
         <Erreur message={etat.erreur} />
       ) : etat.donnees ? (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:grid-cols-4">
             <CarteChiffre
               libelle="Chiffre d'affaires"
               valeur={monnaie(etat.donnees.totaux.revenue)}

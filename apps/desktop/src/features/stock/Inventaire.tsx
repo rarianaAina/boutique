@@ -165,7 +165,7 @@ export function Inventaire() {
         </Carte>
       ) : (
         <>
-          <div className="mb-3 grid grid-cols-4 gap-3">
+          <div className="mb-3 grid grid-cols-1 sm:grid-cols-4 gap-3">
             <Compteur libelle="Lignes à compter" valeur={courante.donnees.lignes.length} />
             <Compteur libelle="Comptées" valeur={comptees.length} />
             <Compteur

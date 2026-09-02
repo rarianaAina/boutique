@@ -259,7 +259,7 @@ export function Parametres() {
             <Chargement />
           ) : (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Champ
                   label="Nom"
                   value={champ('nom', boutique.donnees?.name ?? '')}
@@ -292,7 +292,7 @@ export function Parametres() {
                 comptabilité d'une entreprise cliente : elle ne peut ni la
                 déduire, ni la produire en cas de contrôle.
               */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Champ
                   label="NIF"
                   value={champ('nif', boutique.donnees?.nif ?? '')}
@@ -466,7 +466,7 @@ export function Parametres() {
               onChange={(e) => setAvecSignatures(e.target.checked)}
             />
             {avecSignatures ? (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Champ
                   label="Case de gauche"
                   value={signatures.gauche}

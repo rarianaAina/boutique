@@ -292,7 +292,7 @@ function DialogueRemboursement({ onFermer, onFait }: { onFermer: () => void; onF
               </table>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Liste
                 label="Mode de remboursement"
                 value={mode}

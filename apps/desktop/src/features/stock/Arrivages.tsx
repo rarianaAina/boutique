@@ -217,7 +217,7 @@ function DetailArrivage({ arrivage, onFermer }: { arrivage: ArrivalGroup; onFerm
         </>
       }
     >
-      <div className="mb-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+      <div className="mb-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <Chiffre libelle="Document" valeur={arrivage.label ?? '—'} />
         <Chiffre libelle="Références" valeur={String(arrivage.products)} />
         <Chiffre libelle="Pièces" valeur={String(arrivage.units)} />

@@ -258,7 +258,7 @@ function FormulaireCharge({
       <div className="space-y-3">
         {erreur ? <Erreur message={erreur} /> : null}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Liste
             label="Catégorie"
             value={champ('categorie', charge?.category ?? CHARGE_CATEGORY.rent)}
@@ -282,7 +282,7 @@ function FormulaireCharge({
           aide="« Loyer de septembre », « JIRAMA août »…"
         />
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Champ
             label="Montant"
             requis

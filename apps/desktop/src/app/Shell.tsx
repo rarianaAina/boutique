@@ -41,6 +41,8 @@ export function Shell() {
   } = useSession();
   const { ecran, aller } = useNavigation();
   const [incidentsMasques, setIncidentsMasques] = useState(false);
+  /** Tiroir de navigation, sur les écrans trop étroits pour un rail fixe. */
+  const [tiroir, setTiroir] = useState(false);
 
   const groupes = useMemo(
     () =>
@@ -93,7 +95,31 @@ export function Shell() {
 
   return (
     <div className="flex h-full overflow-hidden bg-encre-100">
-      <nav className="flex w-56 shrink-0 flex-col border-r border-encre-200 bg-white">
+      {/*
+        LE RAIL DE NAVIGATION SUR UN TÉLÉPHONE.
+        
+        Il mesure 224 points. Sur un écran de 390, il ne laissait que 166
+        points à l'application : chaque mot du tableau de bord se coupait en
+        deux, et aucune mesure de débordement ne l'aurait signalé — la mise en
+        page s'écrase, elle ne déborde pas. Il fallait la regarder.
+        
+        En dessous de `lg`, il devient donc un tiroir qu'on ouvre, posé
+        PAR-DESSUS le contenu, et le contenu retrouve la largeur entière.
+      */}
+      {tiroir ? (
+        <button
+          type="button"
+          aria-label="Fermer le menu"
+          className="fixed inset-0 z-30 bg-encre-900/40 lg:hidden"
+          onClick={() => setTiroir(false)}
+        />
+      ) : null}
+
+      <nav
+        className={`z-40 flex w-56 shrink-0 flex-col border-r border-encre-200 bg-white max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:transition-transform ${
+          tiroir ? 'max-lg:translate-x-0' : 'max-lg:-translate-x-full'
+        }`}
+      >
         <div className="flex items-center gap-2.5 border-b border-encre-200 px-4 py-3">
           {/* L'emblème seul, sans le nom de marque : le rail est étroit, et
               c'est le nom de LA BOUTIQUE qui doit y être lisible — c'est lui
@@ -120,7 +146,13 @@ export function Shell() {
                   <li key={entree.cle}>
                     <BoutonNavigation
                       actif={ecran === entree.cle}
-                      onClick={() => aller(entree.cle)}
+                      onClick={() => {
+                        aller(entree.cle);
+                        // Le tiroir se referme derrière soi : sur un
+                        // téléphone, le laisser ouvert masquerait l'écran
+                        // qu'on vient de demander.
+                        setTiroir(false);
+                      }}
                       icone={entree.icone}
                       titre={entree.titre}
                       raccourci={entree.raccourci}
@@ -148,9 +180,18 @@ export function Shell() {
       </nav>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center gap-4 border-b border-encre-200 bg-white px-5 py-2.5">
+        <header className="flex shrink-0 items-center gap-3 border-b border-encre-200 bg-white px-3 py-2.5 lg:gap-4 lg:px-5">
+          {/* Le seul moyen d'atteindre la navigation quand le rail est caché. */}
+          <button
+            type="button"
+            aria-label="Ouvrir le menu"
+            className="-ml-1 rounded-md p-2 text-encre-700 hover:bg-encre-100 lg:hidden"
+            onClick={() => setTiroir(true)}
+          >
+            <Icone nom="menu" taille={20} />
+          </button>
           <RechercheGlobale />
-          <div className="ml-auto text-xs text-encre-400">v{__APP_VERSION__}</div>
+          <div className="ml-auto hidden text-xs text-encre-400 lg:block">v{__APP_VERSION__}</div>
         </header>
 
         {licence.state === 'grace' ? (

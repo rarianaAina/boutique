@@ -37,10 +37,12 @@ export type NomIcone =
   | 'sauvegarde'
   | 'poubelle'
   | 'crayon'
-  | 'info';
+  | 'info'
+  | 'menu';
 
 const TRACES: Record<NomIcone, string> = {
   tableau: 'M4 5h7v6H4zM13 5h7v3h-7zM13 10h7v9h-7zM4 13h7v6H4z',
+  menu: 'M4 6h16M4 12h16M4 18h16',
   caisse: 'M3 8h18l-1.5 11H4.5zM8 8V6a4 4 0 0 1 8 0v2',
   ticket: 'M5 4h14v16l-2.5-1.5L14 20l-2-1.5L10 20l-2.5-1.5L5 20zM8.5 9h7M8.5 13h5',
   facture: 'M6 3h9l4 4v14H6zM15 3v4h4M9 12h7M9 16h5',

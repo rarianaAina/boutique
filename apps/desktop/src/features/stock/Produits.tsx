@@ -416,7 +416,7 @@ function FormulaireProduit({
           {erreur ? <Erreur message={erreur} /> : null}
           {!peutModifier ? <LectureSeule quoi="modifier les produits" /> : null}
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Champ
               label="SKU / Référence interne"
               value={champ('sku', produit?.sku ?? '')}
@@ -447,7 +447,7 @@ function FormulaireProduit({
             onChange={(e) => changer('name', e.target.value)}
           />
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Champ
               label="Marque"
               value={champ('brand', produit?.brand ?? '')}
@@ -470,7 +470,7 @@ function FormulaireProduit({
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Liste
               label="Mode de suivi"
               requis
@@ -504,7 +504,7 @@ function FormulaireProduit({
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Champ
               label="Couleur"
               value={champ('color', produit?.color ?? '')}
@@ -526,7 +526,7 @@ function FormulaireProduit({
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Champ
               label="Prix d'achat"
               inputMode="decimal"

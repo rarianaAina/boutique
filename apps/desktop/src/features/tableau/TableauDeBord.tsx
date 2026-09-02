@@ -91,7 +91,7 @@ export function TableauDeBord() {
         </BarreFiltres>
       </Carte>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:grid-cols-4">
         <CarteChiffre
           libelle="Chiffre d'affaires"
           valeur={monnaie(chiffres.revenueToday)}
@@ -147,7 +147,7 @@ export function TableauDeBord() {
         </div>
       </Carte>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:grid-cols-4">
         <CarteChiffre
           libelle="Stock détenu"
           valeur={chiffres.stockUnits.toLocaleString('fr-FR')}

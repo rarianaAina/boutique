@@ -126,7 +126,7 @@ export function Synchronisation() {
         <Erreur message={etat.erreur} />
       ) : instantane ? (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:grid-cols-4">
             <CarteChiffre
               libelle="Dernière synchronisation"
               valeur={instantane.lastSyncAt ? formaterDate(instantane.lastSyncAt, true) : 'Jamais'}
@@ -260,7 +260,7 @@ export function Synchronisation() {
       ) : null}
 
       <Carte titre="Serveur de synchronisation">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Champ
             label="Adresse du serveur"
             value={url}

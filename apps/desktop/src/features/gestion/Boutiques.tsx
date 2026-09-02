@@ -331,7 +331,7 @@ function FormulaireBoutique({
         {erreur ? <Erreur message={erreur} /> : null}
         {!peutModifier ? <LectureSeule quoi="modifier les boutiques" /> : null}
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Champ
             label="Code"
             requis
@@ -362,7 +362,7 @@ function FormulaireBoutique({
           value={champ('address', boutique?.address ?? '')}
           onChange={(e) => changer('address', e.target.value)}
         />
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Champ
             label="Téléphone"
             value={champ('phone', boutique?.phone ?? '')}

@@ -262,7 +262,7 @@ function FicheTicket({
           <Erreur message={etat.erreur} />
         ) : detail ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-4 gap-3 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-sm">
               <Info libelle="Date" valeur={formaterDate(detail.sale.soldAt, true)} />
               <Info libelle="Vendeur" valeur={detail.sellerLabel} />
               <Info libelle="Client" valeur={detail.customerLabel ?? '—'} />

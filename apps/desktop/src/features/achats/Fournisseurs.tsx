@@ -192,7 +192,7 @@ function FicheFournisseur({
         {!peutModifier ? <LectureSeule quoi="modifier les fournisseurs" /> : null}
 
         {donnees.donnees?.resume ? (
-          <div className="grid grid-cols-3 gap-3 rounded-md bg-encre-50 px-3 py-2.5 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-md bg-encre-50 px-3 py-2.5 text-sm">
             <div>
               <p className="text-xs text-encre-500">Achats</p>
               <p className="font-medium" data-nombre>
@@ -212,7 +212,7 @@ function FicheFournisseur({
           </div>
         ) : null}
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Champ
             label="Code"
             requis
@@ -228,7 +228,7 @@ function FicheFournisseur({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Champ
             label="Société"
             value={champ('company', fournisseur?.company ?? '')}

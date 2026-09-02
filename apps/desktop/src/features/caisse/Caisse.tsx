@@ -251,8 +251,14 @@ export function Caisse() {
     champRecherche.current?.focus();
   };
 
+  /*
+   * DEUX PANNEAUX CÔTE À CÔTE, MAIS PAS SUR UN TÉLÉPHONE. Le panier est figé à
+   * 26 rem : sur 390 points il débordait de l'écran et écrasait le catalogue à
+   * quarante points de large. En dessous de `lg` on les empile — catalogue
+   * au-dessus, panier en dessous, l'ordre dans lequel on s'en sert.
+   */
   return (
-    <div className="flex h-full min-h-0 gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-4 max-lg:h-auto lg:flex-row">
       {/* Colonne gauche : recherche et catalogue */}
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <div className="relative">
@@ -274,7 +280,7 @@ export function Caisse() {
 
         {erreur ? <Erreur message={erreur} /> : null}
 
-        <Carte compact className="flex min-h-0 flex-1 flex-col">
+        <Carte compact className="flex min-h-0 flex-1 flex-col max-lg:min-h-[20rem]">
           {cheminOuvert || recherche.trim().length < 2 ? (
             /* Tant qu'on n'a rien tapé, le catalogue se PARCOURT. Exiger une
                recherche bloquait la vente d'un article dont le vendeur ne
@@ -345,8 +351,8 @@ export function Caisse() {
       </div>
 
       {/* Colonne droite : panier */}
-      <div className="flex w-[26rem] shrink-0 flex-col gap-3">
-        <Carte compact className="min-h-0 flex-1">
+      <div className="flex w-full shrink-0 flex-col gap-3 lg:w-[26rem]">
+        <Carte compact className="min-h-0 flex-1 max-lg:min-h-[18rem]">
           <div className="flex items-center justify-between border-b border-encre-200 px-3 py-2">
             <h2 className="text-encre-800">Panier</h2>
             {panier.length > 0 ? (
@@ -736,7 +742,7 @@ function DialoguePaiement({
           <summary className="cursor-pointer text-sm text-encre-700">
             Paiement en deux modes
           </summary>
-          <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Liste
               label="Second mode"
               value={secondMode}
@@ -848,7 +854,7 @@ function DialogueClient({
 
         <div className="rounded-md border border-encre-200 p-3">
           <h3 className="mb-2 text-encre-800">Nouveau client</h3>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <Champ label="Nom" requis value={nom} onChange={(e) => setNom(e.target.value)} />
             <Champ label="Prénom" value={prenom} onChange={(e) => setPrenom(e.target.value)} />
             <Champ

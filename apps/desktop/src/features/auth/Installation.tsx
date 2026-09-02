@@ -144,7 +144,7 @@ export function Installation() {
 
           <section>
             <h2 className="mb-2 text-encre-800">Votre boutique</h2>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <Champ
                 label="Code"
                 requis
@@ -168,7 +168,7 @@ export function Installation() {
               numéro unique dans tout le réseau, sans coordination entre les boutiques. Il ne pourra
               plus être modifié.
             </Information>
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Champ
                 label="Adresse"
                 value={adresse}
@@ -184,7 +184,7 @@ export function Installation() {
 
           <section>
             <h2 className="mb-2 text-encre-800">Compte administrateur</h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Champ
                 label="Nom complet"
                 requis

@@ -19,12 +19,19 @@ export function EnTetePage({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-4 flex items-start justify-between gap-4">
+    // Sur un écran étroit, les actions passent SOUS le titre. Côte à côte,
+    // elles ne lui laissaient qu'une poignée de points : « Produits » se
+    // réduisait à « P… », ce qui ne dit plus où l'on est.
+    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <div className="min-w-0">
-        <h1 className="truncate text-encre-900">{titre}</h1>
+        <h1 className="text-encre-900 sm:truncate">{titre}</h1>
         {sousTitre ? <div className="mt-0.5 text-xs text-encre-500">{sousTitre}</div> : null}
       </div>
-      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+      {actions ? (
+        <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap">
+          {actions}
+        </div>
+      ) : null}
     </div>
   );
 }

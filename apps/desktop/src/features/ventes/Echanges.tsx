@@ -274,7 +274,7 @@ function DialogueEchange({ onFermer, onFait }: { onFermer: () => void; onFait: (
         {prepare && nouvelleUnite ? (
           <section className="space-y-3">
             <h3 className="text-encre-800">3. Règlement</h3>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <Champ
                 label="Valeur créditée pour la reprise"
                 inputMode="decimal"

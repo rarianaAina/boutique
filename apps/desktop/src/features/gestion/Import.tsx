@@ -293,7 +293,7 @@ export function Import() {
       {etape === 'mapping' && feuille ? (
         <Carte titre={`Colonnes de « ${nomFichier} »`}>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Liste
                 label="Feuille"
                 value={feuille.name}
@@ -430,7 +430,7 @@ export function Import() {
 
       {etape === 'apercu' && plan ? (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:grid-cols-4">
             <CarteChiffre libelle="À créer" valeur={plan.report.counts.CREATE} ton="succes" />
             <CarteChiffre libelle="À mettre à jour" valeur={plan.report.counts.UPDATE} />
             <CarteChiffre libelle="Ignorées" valeur={plan.report.counts.SKIP} />
@@ -537,7 +537,7 @@ export function Import() {
 
       {etape === 'rapport' && resultat ? (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:grid-cols-6">
             <CarteChiffre libelle="Produits créés" valeur={resultat.created} ton="succes" />
             <CarteChiffre libelle="Produits mis à jour" valeur={resultat.updated} />
             <CarteChiffre libelle="Appareils créés" valeur={resultat.unitsCreated} ton="succes" />

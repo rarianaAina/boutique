@@ -334,7 +334,7 @@ function FicheAppareil({
           <Erreur message={etat.erreur} />
         ) : unite ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-4 gap-3 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-sm">
               <Donnee libelle="Produit" valeur={etat.donnees?.produit?.name ?? '—'} />
               <Donnee libelle="Statut" valeur={<BadgeUnite statut={unite.status} />} />
               <Donnee libelle="Fournisseur" valeur={etat.donnees?.fournisseur?.name ?? '—'} />

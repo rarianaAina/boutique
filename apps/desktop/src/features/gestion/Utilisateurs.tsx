@@ -351,7 +351,7 @@ function FormulaireUtilisateur({
       <fieldset disabled={!peutAdministrer} className="space-y-3">
         {erreur ? <Erreur message={erreur} /> : null}
         {!peutAdministrer ? <LectureSeule quoi="gérer les comptes" /> : null}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Champ
             label="Nom complet"
             requis
@@ -559,7 +559,7 @@ function FormulaireRole({
                       {toutes ? 'Tout retirer' : 'Tout ouvrir'}
                     </Bouton>
                   </div>
-                  <div className="grid grid-cols-2 gap-x-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
                     {groupe.pages.map((page) => (
                       <Case
                         key={page}
@@ -589,7 +589,7 @@ function FormulaireRole({
                       {toutes ? 'Tout retirer' : 'Tout accorder'}
                     </Bouton>
                   </div>
-                  <div className="grid grid-cols-2 gap-x-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
                     {groupe.permissions.map((permission) => (
                       <Case
                         key={permission}

@@ -510,7 +510,7 @@ function FicheTransfert({
           <Erreur message={etat.erreur} />
         ) : detail ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-4 gap-3 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-sm">
               <Donnee libelle="De" valeur={detail.fromShopName} />
               <Donnee libelle="Vers" valeur={detail.toShopName} />
               <Donnee

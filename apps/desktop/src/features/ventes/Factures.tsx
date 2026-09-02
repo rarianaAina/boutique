@@ -364,7 +364,7 @@ function FicheFacture({
               <p className="mt-2 text-xs text-encre-600">{doc.piedDePage}</p>
             ) : null}
             {doc.signatures ? (
-              <div className="mt-4 grid grid-cols-2 gap-4">
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {[doc.signatures.gauche, doc.signatures.droite].map((libelle) => (
                   <div key={libelle} className="rounded border border-encre-200 p-2">
                     <p className="text-xs font-semibold">{libelle}</p>

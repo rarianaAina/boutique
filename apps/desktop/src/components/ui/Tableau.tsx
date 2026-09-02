@@ -94,7 +94,18 @@ export function Tableau<T>({
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
-      <table className="tableau">
+      {/*
+        LA LARGEUR MINIMALE N'EST PAS DÉCORATIVE. Un tableau occupe toute la
+        largeur qu'on lui donne : sur un téléphone, il ne débordait pas, il
+        ÉCRASAIT ses colonnes, et les dernières se retrouvaient hors du cadre
+        sans le moindre moyen d'y accéder — pas même une barre de défilement,
+        puisque rien ne dépassait. En lui imposant une largeur plancher, il
+        déborde franchement et le cadre le fait défiler.
+
+        Seulement en dessous de `lg` : sur un poste de travail, la mise en page
+        actuelle convient et n'a pas à changer.
+      */}
+      <table className="tableau max-lg:min-w-[44rem]">
         <thead>
           <tr>
             {selection ? (
