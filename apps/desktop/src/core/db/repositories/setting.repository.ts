@@ -54,6 +54,15 @@ export const POSTE_KEYS = {
   installation: 'licence.installation',
   /** Clé d'activation saisie par le commerçant. */
   licenceKey: 'licence.key',
+  /**
+   * Code d'installation ADOPTÉ, quand ce poste est rattaché à un autre.
+   *
+   * Une licence est vendue à une entreprise et non à une machine : le produit
+   * déclare un quota « postes rattachés ». Ce poste-ci retient alors le code
+   * de celui qui porte la licence, et se présente sous ce code. Vide quand il
+   * vit sur sa propre licence, ce qui est le cas ordinaire.
+   */
+  licenceAdoptee: 'licence.rattachement',
   /** Cliquet d'horloge : la date la plus avancée jamais constatée. */
   dateRatchet: 'licence.ratchet',
   /**

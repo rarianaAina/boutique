@@ -103,6 +103,17 @@ interface ValeurSession {
    */
   ouvre: (fonction: FonctionBoutique) => boolean;
   activerLicence: (cle: string) => Promise<LicenceStatus>;
+  /**
+   * Rattache ce poste à la licence d'un autre.
+   *
+   * Une licence est vendue à une entreprise et non à une machine : le produit
+   * déclare un quota « postes rattachés ». Une tablette est une installation
+   * neuve, avec son propre code, et sans cela son propriétaire devrait
+   * racheter la licence qu'il a déjà.
+   */
+  rattacherLicence: (cle: string) => Promise<LicenceStatus>;
+  /** Code d'installation auquel ce poste est rattaché, ou `null`. */
+  rattachement: string | null;
   rechargerLicence: () => Promise<void>;
   connecter: (login: string, motDePasse: string) => Promise<void>;
   deconnecter: () => Promise<void>;
@@ -127,6 +138,8 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
   const [licence, setLicence] = useState<LicenceStatus>(LICENCE_INCONNUE);
   const [licenceEvaluee, setLicenceEvaluee] = useState(false);
   const [codeInstallation, setCodeInstallation] = useState('');
+  /** Code d'installation adopté, quand ce poste vit sur la licence d'un autre. */
+  const [rattachement, setRattachement] = useState<string | null>(null);
   /** Date d'installation du poste, origine de la période d'essai. */
   const [installeLe, setInstalleLe] = useState<string | null>(null);
 
@@ -225,6 +238,7 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
     // Le code d'abord : il ne dépend ni d'une boutique ni d'une date, et
     // c'est lui qu'on doit pouvoir dicter même quand tout le reste échoue.
     setCodeInstallation(installationCode(await licences.installation()));
+    setRattachement(await licences.rattachement());
     setInstalleLe(installeeLe);
     setLicence(await licences.status(installeeLe));
     setLicenceEvaluee(true);
@@ -242,6 +256,19 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
       // On ne retient à l'écran que ce qui a été ENREGISTRÉ : afficher un refus
       // comme s'il était l'état du poste ferait croire à un blocage définitif.
       if (!refusee(statut)) setLicence(statut);
+      return statut;
+    },
+    [db],
+  );
+
+  const rattacherLicence = useCallback(
+    async (cle: string) => {
+      if (!db) throw new Error('Base indisponible.');
+      const statut = await new LicenceService(db).rattacher(cle);
+      if (!refusee(statut)) {
+        setLicence(statut);
+        setRattachement(await new LicenceService(db).rattachement());
+      }
       return statut;
     },
     [db],
@@ -348,6 +375,8 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
       licenceEvaluee,
       ouvre: (fonction: FonctionBoutique) => licenceAllows(licence, fonction),
       activerLicence,
+      rattacherLicence,
+      rattachement,
       rechargerLicence,
       peut: (permission: Permission) =>
         can(
@@ -386,6 +415,8 @@ export function FournisseurSession({ children }: { children: ReactNode }) {
       codeInstallation,
       licenceEvaluee,
       activerLicence,
+      rattacherLicence,
+      rattachement,
       rechargerLicence,
     ],
   );

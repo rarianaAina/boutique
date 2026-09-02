@@ -469,3 +469,121 @@ describe('réglages du poste', () => {
     expect(boutique[0]?.total).toBe(1);
   });
 });
+
+describe('poste rattaché à une licence existante', () => {
+  let fixture: Fixture;
+
+  beforeEach(async () => {
+    fixture = await seedFixture();
+  });
+
+  /**
+   * LE BESOIN : un commerçant licencié sur son ordinateur installe
+   * l'application sur une tablette. C'est une installation neuve — sa propre
+   * base, son propre code — mais il ne doit pas racheter une licence : le
+   * produit déclare un quota « postes rattachés ».
+   */
+  /**
+   * `emiseLe` recule la date d'émission plutôt que d'accepter une durée
+   * négative : c'est ainsi qu'on obtient une clé réellement périmée, comme
+   * celle d'un client qui n'a pas renouvelé.
+   */
+  const cleDe = async (
+    code: string,
+    emiseLe = new Date(),
+    produit: Produit = BOUTIQUE,
+    formule = 'standard',
+  ) => {
+    const { privee, publique } = await editeurDeTest();
+    const emission = await emitLicence(
+      produit,
+      { code, nom: 'ARINA', formule, mois: 12 },
+      privee,
+      emiseLe,
+    );
+    return { cle: emission.cle, publique };
+  };
+
+  it('accepte la clé de l’ordinateur après rattachement', async () => {
+    const codeOrdinateur = installationCode('ordinateur-du-client');
+    const { cle, publique } = await cleDe(codeOrdinateur);
+    const tablette = new LicenceService(fixture.db, publique);
+
+    // Sans rattachement, la clé vise une autre installation.
+    expect((await tablette.activate(cle)).state).toBe('autre-entreprise');
+    expect(await tablette.rattachement()).toBeNull();
+
+    // Le rattachement se fait en présentant la CLÉ, pas le code seul.
+    expect((await tablette.rattacher(cle)).state).toBe('valide');
+    expect(await tablette.rattachement()).toBe(codeOrdinateur);
+
+    // Et il tient d'un démarrage à l'autre.
+    const auDemarrage = new LicenceService(fixture.db, publique);
+    expect((await auDemarrage.status(null)).state).toBe('valide');
+  });
+
+  it('rattache avec une clé périmée, et la montre périmée', async () => {
+    // MÊME RÈGLE QUE SUR L'ORDINATEUR : une clé échue est une VRAIE licence,
+    // et `activate` la conserve déjà pour que son échéance reste lisible. La
+    // refuser ici laisserait le commerçant devant un rejet sans explication,
+    // alors que ce qu'il doit lire, c'est « expirée le … ».
+    const ilYaDeuxAns = new Date(Date.now() - 730 * 86_400_000);
+    const { cle, publique } = await cleDe(installationCode('ordinateur-du-client'), ilYaDeuxAns);
+    const tablette = new LicenceService(fixture.db, publique);
+
+    const statut = await tablette.rattacher(cle);
+    expect(statut.state).not.toBe('valide');
+    expect(['expiree', 'grace']).toContain(statut.state);
+    expect(await tablette.rattachement()).toBe(installationCode('ordinateur-du-client'));
+  });
+
+  it('ne rattache rien avec une clé d’un autre logiciel', async () => {
+    const { cle, publique } = await cleDe(
+      installationCode('x'),
+      new Date(),
+      CAISSE,
+      'quincaillerie',
+    );
+    const tablette = new LicenceService(fixture.db, publique);
+
+    expect((await tablette.rattacher(cle)).state).toBe('autre-produit');
+    expect(await tablette.rattachement()).toBeNull();
+  });
+
+  it('ne rattache rien avec une clé trafiquée', async () => {
+    const { cle, publique } = await cleDe(installationCode('ordinateur-du-client'));
+    const tablette = new LicenceService(fixture.db, publique);
+
+    expect((await tablette.rattacher(`${cle.slice(0, -4)}AAAA`)).state).toBe('invalide');
+    expect(await tablette.rattachement()).toBeNull();
+  });
+
+  it('ne rattache rien avec une clé illisible', async () => {
+    const tablette = new LicenceService(fixture.db, '');
+    expect((await tablette.rattacher('ceci-n-est-pas-une-cle')).state).toBe('invalide');
+    expect(await tablette.rattachement()).toBeNull();
+  });
+
+  it('revient à son propre code quand on le détache', async () => {
+    const { cle, publique } = await cleDe(installationCode('ordinateur-du-client'));
+    const tablette = new LicenceService(fixture.db, publique);
+    await tablette.rattacher(cle);
+
+    await tablette.detacher();
+    expect(await tablette.rattachement()).toBeNull();
+    // La clé part avec le rattachement : elle ne vaut plus pour ce poste, et
+    // la garder ferait afficher un refus à chaque démarrage.
+    expect((await tablette.status(null)).state).toBe('absente');
+  });
+
+  it('le rattachement ne voyage pas avec l’archive de portabilité', async () => {
+    const { POSTE_KEYS: clefs } = await import('@/core/db/repositories/setting.repository');
+    const { TABLES_EXPORTEES } = await import('@/core/services/portabilite.service');
+
+    // `setting` est exporté, mais les réglages du POSTE en sont retirés un par
+    // un : sans cela, copier une archive sur cinq machines les activerait
+    // toutes les cinq.
+    expect(TABLES_EXPORTEES as readonly string[]).toContain('setting');
+    expect(Object.values(clefs)).toContain('licence.rattachement');
+  });
+});

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BOUTIQUE, licenceAllows, type LicenceStatus } from '@boutique/shared';
+import { BOUTIQUE, licenceAllows, licenceQuota, type LicenceStatus } from '@boutique/shared';
 import { useSession } from '@/app/session';
 import { Bouton } from '@/components/ui/Bouton';
 import { Badge } from '@/components/ui/Badge';
@@ -17,22 +17,32 @@ import { Carte, Erreur, Information } from '@/components/ui/Page';
  * bloqué.
  */
 export function Licence({ pleinEcran = false }: { pleinEcran?: boolean }) {
-  const { licence, codeInstallation, activerLicence } = useSession();
+  const { licence, codeInstallation, activerLicence, rattacherLicence, rattachement } =
+    useSession();
   const [saisie, setSaisie] = useState('');
   const [refus, setRefus] = useState<string | null>(null);
+  /**
+   * Code visé par une clé qui ne concerne pas ce poste.
+   *
+   * On ne se contente pas de refuser : c'est très probablement la clé d'un
+   * autre appareil du même commerçant, et refuser sans rien proposer le
+   * laisserait croire qu'il doit en racheter une.
+   */
+  const [aRattacher, setARattacher] = useState<string | null>(null);
   const [occupe, setOccupe] = useState(false);
   const [copie, setCopie] = useState(false);
 
-  const activer = async () => {
+  const tenter = async (action: (cle: string) => Promise<LicenceStatus>) => {
     setOccupe(true);
     setRefus(null);
+    setARattacher(null);
     try {
-      const resultat = await activerLicence(saisie);
-      if (
-        resultat.state === 'invalide' ||
-        resultat.state === 'autre-entreprise' ||
-        resultat.state === 'autre-produit'
-      ) {
+      const resultat = await action(saisie);
+      if (resultat.state === 'autre-entreprise') {
+        setARattacher(resultat.payload?.c ?? null);
+        return;
+      }
+      if (resultat.state === 'invalide' || resultat.state === 'autre-produit') {
         setRefus(resultat.reason ?? 'Clé refusée.');
         return;
       }
@@ -43,6 +53,9 @@ export function Licence({ pleinEcran = false }: { pleinEcran?: boolean }) {
       setOccupe(false);
     }
   };
+
+  const activer = () => tenter(activerLicence);
+  const rattacher = () => tenter(rattacherLicence);
 
   const copier = () => {
     void navigator.clipboard?.writeText(codeInstallation).catch(() => undefined);
@@ -66,6 +79,14 @@ export function Licence({ pleinEcran = false }: { pleinEcran?: boolean }) {
         <p className="font-medium">{resume.titre}</p>
         <p className="mt-0.5 text-sm">{resume.detail}</p>
       </div>
+
+      {rattachement ? (
+        <Information>
+          Ce poste est <strong>rattaché</strong> à l’installation{' '}
+          <span className="mono">{rattachement}</span> : il vit sur la licence d’un autre appareil
+          du même commerce, et n’a pas de licence propre.
+        </Information>
+      ) : null}
 
       <div>
         <p className="text-sm text-encre-600">
@@ -117,11 +138,49 @@ export function Licence({ pleinEcran = false }: { pleinEcran?: boolean }) {
         </Bouton>
       </div>
 
+      {/*
+        LA CLÉ D'UN AUTRE APPAREIL DU MÊME COMMERCE. C'est le cas ordinaire
+        d'une tablette installée à côté de l'ordinateur : une installation
+        neuve, donc un code neuf, donc une clé qui ne correspond pas. On
+        propose le rattachement au lieu de renvoyer le commerçant acheter une
+        seconde licence.
+
+        Ce qu'il faut posséder pour rattacher, c'est la CLÉ — elle est ici,
+        collée, et sa signature vient d'être vérifiée. Le code d'installation,
+        lui, s'affiche en clair et ne protégerait rien.
+      */}
+      {aRattacher ? (
+        <div className="rounded-lg border border-attention-200 bg-attention-50 px-4 py-3">
+          <p className="text-sm text-attention-900">
+            Cette clé appartient à l’installation <span className="mono">{aRattacher}</span>, pas à
+            ce poste. Si c’est un autre appareil de votre commerce, rattachez celui-ci à cette même
+            licence — vous n’avez pas à en acheter une seconde.
+          </p>
+          <div className="mt-2">
+            <Bouton variante="principal" occupe={occupe} onClick={() => void rattacher()}>
+              Rattacher ce poste à cette licence
+            </Bouton>
+          </div>
+        </div>
+      ) : null}
+
       {refus ? <Erreur message={refus} /> : null}
 
       {licence.payload ? (
         <div>
-          <p className="text-sm font-medium text-encre-700">Modules compris dans votre licence</p>
+          {/*
+            Le plafond est MONTRÉ, pas imposé. Hors ligne, les appareils ne
+            peuvent pas se compter entre eux : bloquer sur un chiffre qu'on ne
+            sait pas calculer empêcherait un client en règle de travailler.
+          */}
+          <p className="text-sm text-encre-600">
+            Postes rattachés compris dans cette licence :{' '}
+            <strong>{licenceQuota(licence, 'postes')}</strong>. Le logiciel ne les compte pas — il
+            fonctionne hors ligne, les appareils ne se voient pas entre eux.
+          </p>
+          <p className="mt-3 text-sm font-medium text-encre-700">
+            Modules compris dans votre licence
+          </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {BOUTIQUE.fonctions.map((fonction) => (
               <Badge

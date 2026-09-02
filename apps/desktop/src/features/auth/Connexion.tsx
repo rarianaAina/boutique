@@ -8,6 +8,7 @@ import type { SqlExecutor } from '@/core/db/client';
 import logo from '@/assets/logo.png';
 import { useSession } from '@/app/session';
 import { messageDe } from '@/app/hooks';
+import { Licence } from '@/features/gestion/Licence';
 
 /**
  * Écran de connexion.
@@ -22,6 +23,16 @@ import { messageDe } from '@/app/hooks';
 export function Connexion() {
   const { connecter, shopName, shopCode, db } = useSession();
   const [deblocage, setDeblocage] = useState(false);
+  /**
+   * Activation ATTEIGNABLE AVANT LA CONNEXION.
+   *
+   * L'écran d'activation ne vivait que dans les paramètres et dans le blocage
+   * qui suit la connexion. Or le cas où l'on en a besoin est justement celui
+   * d'un appareil neuf — une tablette qu'on vient d'installer — dont le
+   * propriétaire veut d'abord rattacher sa licence, avant même de créer sa
+   * séance de travail.
+   */
+  const [activation, setActivation] = useState(false);
   const [login, setLogin] = useState('');
   const [motDePasse, setMotDePasse] = useState('');
   const [erreur, setErreur] = useState<string | null>(null);
@@ -109,12 +120,34 @@ export function Connexion() {
           </button>
         </p>
 
+        <p className="mt-2 text-center">
+          <button
+            type="button"
+            onClick={() => setActivation(true)}
+            className="text-xs text-marque-700 underline underline-offset-2 hover:text-marque-800"
+          >
+            Activer ou rattacher ce poste
+          </button>
+        </p>
+
         <p className="mt-3 text-center text-xs text-encre-400">
           Cette application fonctionne hors ligne. Aucune connexion Internet n'est nécessaire pour
           ouvrir la caisse.
         </p>
 
         {deblocage && db ? <Deblocage db={db} onFermer={() => setDeblocage(false)} /> : null}
+
+        {activation ? (
+          <Dialogue
+            ouvert
+            titre="Activation de ce poste"
+            largeur="md"
+            onFermer={() => setActivation(false)}
+            pied={<Bouton onClick={() => setActivation(false)}>Fermer</Bouton>}
+          >
+            <Licence />
+          </Dialogue>
+        ) : null}
       </div>
     </div>
   );

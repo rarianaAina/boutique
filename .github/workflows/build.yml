@@ -218,15 +218,12 @@ jobs:
           sdkmanager --install "ndk;27.1.12297006"
           echo "NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
 
-      # Les quatre architectures qu'Android emploie. Les deux ARM couvrent les
-      # appareils réels ; les deux x86 servent aux émulateurs, et coûtent peu.
+      # LES DEUX ARCHITECTURES ARM, et pas les quatre. Les x86 ne servent qu'aux
+      # émulateurs : les embarquer doublait le temps de compilation et pesait
+      # sur un fichier que le commerçant télécharge en 3G.
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: >-
-            aarch64-linux-android,
-            armv7-linux-androideabi,
-            i686-linux-android,
-            x86_64-linux-android
+          targets: aarch64-linux-android, armv7-linux-androideabi
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -242,8 +239,14 @@ jobs:
       - name: Préparation du projet Android
         run: pnpm --filter @boutique/desktop tauri android init --ci --skip-targets-install
 
-      - name: Compilation de l'APK
-        run: pnpm --filter @boutique/desktop tauri android build --apk --debug
+      # UN APK PAR ARCHITECTURE. Le paquet unique pesait cent cinquante-six
+      # mégaoctets parce qu'il portait le code machine de toutes les
+      # architectures à la fois ; découpé, chacun tient dans le tiers. Presque
+      # tous les appareils d'aujourd'hui prennent `arm64-v8a`.
+      - name: Compilation des APK
+        run: >-
+          pnpm --filter @boutique/desktop tauri android build
+          --apk --debug --split-per-abi --target aarch64 armv7
 
       - uses: actions/upload-artifact@v4
         with:

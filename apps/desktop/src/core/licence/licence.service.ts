@@ -2,6 +2,7 @@ import {
   BOUTIQUE,
   LICENCE_PUBLIC_KEY,
   type LicenceStatus,
+  decodeLicence,
   judgeClock,
   newId,
   trialStatus,
@@ -82,6 +83,7 @@ export class LicenceService {
         publicKeySpki: this.publicKeySpki,
         produit: BOUTIQUE,
         companyId: await this.installation(),
+        codeInstallation: (await this.rattachement()) ?? undefined,
         now,
       });
     }
@@ -106,6 +108,7 @@ export class LicenceService {
       publicKeySpki: this.publicKeySpki,
       produit: BOUTIQUE,
       companyId: await this.installation(),
+      codeInstallation: (await this.rattachement()) ?? undefined,
       now,
     });
 
@@ -119,6 +122,72 @@ export class LicenceService {
 
     await this.settings.set(POSTE_KEYS.licenceKey, cle.replace(/\s+/g, ''), null);
     return statut;
+  }
+
+  /**
+   * Code d'installation auquel ce poste est rattaché, s'il l'est.
+   *
+   * `null` dans le cas ordinaire : le poste vit sur sa propre licence.
+   */
+  async rattachement(): Promise<string | null> {
+    const brut = await this.settings.raw(POSTE_KEYS.licenceAdoptee);
+    return brut && brut.trim() !== '' ? brut.trim() : null;
+  }
+
+  /**
+   * Rattache ce poste à la licence d'un autre, en présentant cette licence.
+   *
+   * CE QU'IL FAUT POSSÉDER, C'EST LA CLÉ. Le code d'installation, lui,
+   * s'affiche en clair sur l'écran d'activation et se dicte au téléphone : le
+   * demander seul reviendrait à distribuer des licences à qui a entendu douze
+   * signes. La clé est signée, et seul le client la détient.
+   *
+   * On ne rattache donc pas d'abord pour vérifier ensuite : on vérifie la clé
+   * telle qu'elle est, en se présentant sous le code QU'ELLE NOMME. Une clé
+   * illisible, trafiquée ou émise pour un autre logiciel ne rattache rien.
+   *
+   * Une clé ÉCHUE, en revanche, rattache — et s'affiche comme échue. C'est la
+   * règle que suit déjà `activate` sur l'ordinateur : une clé expirée est une
+   * vraie licence, et la refuser laisserait le commerçant devant un rejet sans
+   * explication, alors que ce qu'il doit lire est « expirée le … ».
+   */
+  async rattacher(cle: string): Promise<LicenceStatus> {
+    const charge = decodeLicence(cle.replace(/\s+/g, ''));
+    if (!charge) {
+      return {
+        state: 'invalide',
+        payload: null,
+        daysLeft: null,
+        graceLeft: null,
+        reason: 'Clé illisible : vérifiez qu’elle a été copiée en entier.',
+      };
+    }
+
+    const statut = await verifyLicence(cle, {
+      publicKeySpki: this.publicKeySpki,
+      produit: BOUTIQUE,
+      companyId: await this.installation(),
+      codeInstallation: charge.payload.c,
+      now: await this.trustedNow(),
+    });
+
+    if (
+      statut.state === 'invalide' ||
+      statut.state === 'autre-entreprise' ||
+      statut.state === 'autre-produit'
+    ) {
+      return statut;
+    }
+
+    await this.settings.set(POSTE_KEYS.licenceAdoptee, charge.payload.c, null);
+    await this.settings.set(POSTE_KEYS.licenceKey, cle.replace(/\s+/g, ''), null);
+    return statut;
+  }
+
+  /** Détache ce poste : il revient à son propre code d'installation. */
+  async detacher(): Promise<void> {
+    await this.settings.set(POSTE_KEYS.licenceAdoptee, '', null);
+    await this.settings.set(POSTE_KEYS.licenceKey, '', null);
   }
 
   async clear(): Promise<void> {
