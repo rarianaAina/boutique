@@ -145,7 +145,7 @@ importers:
     dependencies:
       '@licence/noyau':
         specifier: github:rarianaAina/licence#main
-        version: https://codeload.github.com/rarianaAina/licence/tar.gz/d1700e2ecae07df6c3ed7e008075828ff6b12c09
+        version: https://codeload.github.com/rarianaAina/licence/tar.gz/a5100c12dc7a4d52d7ebb4e4b683894995221a9d
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
@@ -570,8 +570,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@licence/noyau@https://codeload.github.com/rarianaAina/licence/tar.gz/d1700e2ecae07df6c3ed7e008075828ff6b12c09':
-    resolution: {gitHosted: true, integrity: sha512-7OSuFlnNNv6Sweew+GTsKwB7x4hoLGuU/RkEkw2Wwi4cQcNqPwa/S3m6Q8T7itJXqO9oDW/atu/39envWPsQ/w==, tarball: https://codeload.github.com/rarianaAina/licence/tar.gz/d1700e2ecae07df6c3ed7e008075828ff6b12c09}
+  '@licence/noyau@https://codeload.github.com/rarianaAina/licence/tar.gz/a5100c12dc7a4d52d7ebb4e4b683894995221a9d':
+    resolution: {gitHosted: true, integrity: sha512-1ieJivK6AJUXFxkC5eJyxzBxI8gIpt0At61DrgPYFV7h4/ItyWVNDRl2irVyE1XusiT+1VY3BFB+FnVg9EsnDQ==, tarball: https://codeload.github.com/rarianaAina/licence/tar.gz/a5100c12dc7a4d52d7ebb4e4b683894995221a9d}
     version: 2.0.1
     engines: {node: '>=20'}
 
@@ -1737,7 +1737,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@licence/noyau@https://codeload.github.com/rarianaAina/licence/tar.gz/d1700e2ecae07df6c3ed7e008075828ff6b12c09': {}
+  '@licence/noyau@https://codeload.github.com/rarianaAina/licence/tar.gz/a5100c12dc7a4d52d7ebb4e4b683894995221a9d': {}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
